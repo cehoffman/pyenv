@@ -1,0 +1,9 @@
+[submodule "plugins/pyenv-pip-migrate"]
+	path = plugins/pyenv-pip-migrate
+	url = https://github.com/yyuu/pyenv-pip-migrate
+[submodule "plugins/pyenv-pip-rehash"]
+	path = plugins/pyenv-pip-rehash
+	url = https://github.com/yyuu/pyenv-pip-rehash
+[submodule "plugins/pyenv-virtualenv"]
+	path = plugins/pyenv-virtualenv
+	url = https://github.com/yyuu/pyenv-virtualenv
