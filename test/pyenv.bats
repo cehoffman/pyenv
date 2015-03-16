@@ -5,7 +5,7 @@ load test_helper
 @test "blank invocation" {
   run pyenv
   assert_success
-  assert [ "${lines[0]}" == "pyenv 0.4.0-20140317" ]
+  assert [ "${lines[0]}" == "pyenv 20150226" ]
 }
 
 @test "invalid command" {
@@ -46,10 +46,30 @@ load test_helper
   assert_output "pyenv: cannot change working directory to \`$dir'"
 }
 
-@test "conflicting GREP_OPTIONS" {
-  file="${BATS_TMPDIR}/hello"
-  echo "hello" > "$file"
-  GREP_OPTIONS="-F" run pyenv grep "hell." "$file"
+@test "adds its own libexec to PATH" {
+  run pyenv echo "PATH"
+  assert_success "${BATS_TEST_DIRNAME%/*}/libexec:$PATH"
+}
+
+@test "adds plugin bin dirs to PATH" {
+  mkdir -p "$PYENV_ROOT"/plugins/python-build/bin
+  mkdir -p "$PYENV_ROOT"/plugins/pyenv-each/bin
+  run pyenv echo -F: "PATH"
   assert_success
-  assert_output "hello"
+  assert_line 0 "${BATS_TEST_DIRNAME%/*}/libexec"
+  assert_line 1 "${PYENV_ROOT}/plugins/python-build/bin"
+  assert_line 2 "${PYENV_ROOT}/plugins/pyenv-each/bin"
+}
+
+@test "PYENV_HOOK_PATH preserves value from environment" {
+  PYENV_HOOK_PATH=/my/hook/path:/other/hooks run pyenv echo -F: "PYENV_HOOK_PATH"
+  assert_success
+  assert_line 0 "/my/hook/path"
+  assert_line 1 "/other/hooks"
+  assert_line 2 "${PYENV_ROOT}/pyenv.d"
+}
+
+@test "PYENV_HOOK_PATH includes pyenv built-in plugins" {
+  run pyenv echo "PYENV_HOOK_PATH"
+  assert_success ":${PYENV_ROOT}/pyenv.d:${BATS_TEST_DIRNAME%/*}/pyenv.d:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib/pyenv/hooks"
 }

@@ -4,6 +4,8 @@ load test_helper
 export PYTHON_BUILD_CACHE_PATH="$TMP/cache"
 export MAKE=make
 export MAKE_OPTS="-j 2"
+export CC=cc
+export -n PYTHON_CONFIGURE_OPTS
 
 setup() {
   mkdir -p "$INSTALL_ROOT"
@@ -33,6 +35,7 @@ tarball() {
 
   executable "$configure" <<OUT
 #!$BASH
+echo "$name: CPPFLAGS=\\"\$CPPFLAGS\\" LDFLAGS=\\"\$LDFLAGS\\"" >> build.log
 echo "$name: \$@" \${PYTHONOPT:+PYTHONOPT=\$PYTHONOPT} >> build.log
 OUT
 
@@ -56,7 +59,7 @@ assert_build_log() {
 }
 
 @test "yaml is installed for python" {
-  cached_tarball "yaml-0.1.5"
+  cached_tarball "yaml-0.1.6"
   cached_tarball "Python-3.2.1"
 
   stub brew false
@@ -69,9 +72,11 @@ assert_build_log() {
   unstub make
 
   assert_build_log <<OUT
-yaml-0.1.5: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
+yaml-0.1.6: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
+yaml-0.1.6: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
@@ -79,25 +84,55 @@ OUT
 }
 
 @test "apply python patch before building" {
-  cached_tarball "yaml-0.1.5"
+  cached_tarball "yaml-0.1.6"
   cached_tarball "Python-3.2.1"
 
   stub brew false
   stub_make_install
   stub_make_install
-  stub patch ' : echo patch "$@" >> build.log'
+  stub patch ' : echo patch "$@" | sed -E "s/\.[[:alnum:]]+$/.XXX/" >> build.log'
 
-  install_fixture --patch definitions/needs-yaml
+  TMPDIR="$TMP" install_fixture --patch definitions/needs-yaml <<<""
   assert_success
 
   unstub make
   unstub patch
 
   assert_build_log <<OUT
-yaml-0.1.5: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
+yaml-0.1.6: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
+yaml-0.1.6: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
-patch -p0 -i -
+patch -p0 --force -i $TMP/python-patch.XXX
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
+Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
+make -j 2
+make install
+OUT
+}
+
+@test "apply python patch from git diff before building" {
+  cached_tarball "yaml-0.1.6"
+  cached_tarball "Python-3.2.1"
+
+  stub brew false
+  stub_make_install
+  stub_make_install
+  stub patch ' : echo patch "$@" | sed -E "s/\.[[:alnum:]]+$/.XXX/" >> build.log'
+
+  TMPDIR="$TMP" install_fixture --patch definitions/needs-yaml <<<"diff --git a/script.py"
+  assert_success
+
+  unstub make
+  unstub patch
+
+  assert_build_log <<OUT
+yaml-0.1.6: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
+yaml-0.1.6: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
+make -j 2
+make install
+patch -p1 --force -i $TMP/python-patch.XXX
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
@@ -120,7 +155,8 @@ OUT
   unstub make
 
   assert_build_log <<OUT
-Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib CPPFLAGS=-I$brew_libdir/include LDFLAGS=-L$brew_libdir/lib
+Python-3.2.1: CPPFLAGS="-I$brew_libdir/include -I${TMP}/install/include " LDFLAGS="-L$brew_libdir/lib -L${TMP}/install/lib "
+Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
 OUT
@@ -144,7 +180,8 @@ DEF
   unstub make
 
   assert_build_log <<OUT
-Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib CPPFLAGS=-I$readline_libdir/include LDFLAGS=-L$readline_libdir/lib
+Python-3.2.1: CPPFLAGS="-I$readline_libdir/include -I${TMP}/install/include " LDFLAGS="-L$readline_libdir/lib -L${TMP}/install/lib "
+Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
 OUT
@@ -153,6 +190,7 @@ OUT
 @test "readline is not linked from Homebrew when explicitly defined" {
   cached_tarball "Python-3.2.1"
 
+  # python-build
   readline_libdir="$TMP/custom"
   mkdir -p "$readline_libdir/include/readline"
   touch "$readline_libdir/include/readline/rlconf.h"
@@ -170,6 +208,7 @@ DEF
   unstub make
 
   assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib CPPFLAGS=-I$readline_libdir/include LDFLAGS=-L$readline_libdir/lib
 make -j 2
 make install
@@ -178,6 +217,10 @@ OUT
 
 @test "number of CPU cores defaults to 2" {
   cached_tarball "Python-3.2.1"
+
+  # yyuu/pyenv#222
+  stub uname '-s : echo Darwin'
+  stub sw_vers '-productVersion : echo 10.10'
 
   stub uname '-s : echo Darwin'
   stub sysctl false
@@ -193,6 +236,7 @@ DEF
   unstub make
 
   assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
@@ -201,6 +245,10 @@ OUT
 
 @test "number of CPU cores is detected on Mac" {
   cached_tarball "Python-3.2.1"
+
+  # yyuu/pyenv#222
+  stub uname '-s : echo Darwin'
+  stub sw_vers '-productVersion : echo 10.10'
 
   stub uname '-s : echo Darwin'
   stub sysctl '-n hw.ncpu : echo 4'
@@ -217,8 +265,37 @@ DEF
   unstub make
 
   assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 4
+make install
+OUT
+}
+
+@test "number of CPU cores is detected on FreeBSD" {
+  cached_tarball "Python-3.2.1"
+
+  stub uname '-s : echo FreeBSD'
+  stub sysctl '-n hw.ncpu : echo 1'
+  stub_make_install
+
+  # yyuu/pyenv#222
+  stub uname '-s : echo FreeBSD'
+
+  export -n MAKE_OPTS
+  run_inline_definition <<DEF
+install_package "Python-3.2.1" "http://python.org/ftp/python/3.2.1/Python-3.2.1.tar.gz"
+DEF
+  assert_success
+
+  unstub uname
+  unstub sysctl
+  unstub make
+
+  assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
+Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
+make -j 1
 make install
 OUT
 }
@@ -237,6 +314,7 @@ DEF
   unstub make
 
   assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install DOGE="such wow"
@@ -257,6 +335,7 @@ DEF
   unstub make
 
   assert_build_log <<OUT
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install DOGE="such wow"
@@ -272,16 +351,34 @@ OUT
   assert [ -x ./here/bin/package ]
 }
 
-@test "make on FreeBSD defaults to gmake" {
+@test "make on FreeBSD 9 defaults to gmake" {
   cached_tarball "Python-3.2.1"
 
-  stub uname "-s : echo FreeBSD"
+  stub uname "-s : echo FreeBSD" "-r : echo 9.1"
   MAKE=gmake stub_make_install
+
+  # yyuu/pyenv#222
+  stub uname '-s : echo FreeBSD'
 
   MAKE= install_fixture definitions/vanilla-python
   assert_success
 
   unstub gmake
+  unstub uname
+}
+
+@test "make on FreeBSD 10" {
+  cached_tarball "Python-3.2.1"
+
+  stub uname "-s : echo FreeBSD" "-r : echo 10.0-RELEASE"
+  stub_make_install
+
+  # yyuu/pyenv#222
+  stub uname '-s : echo FreeBSD'
+
+  MAKE= install_fixture definitions/vanilla-python
+  assert_success
+
   unstub uname
 }
 
@@ -308,6 +405,7 @@ DEF
 
   assert_build_log <<OUT
 apply -p1 -i /my/patch.diff
+Python-3.2.1: CPPFLAGS="-I${TMP}/install/include " LDFLAGS="-L${TMP}/install/lib "
 Python-3.2.1: --prefix=$INSTALL_ROOT --libdir=$INSTALL_ROOT/lib
 make -j 2
 make install
@@ -326,6 +424,42 @@ OUT
 
   run "$INSTALL_ROOT/bin/package" "world"
   assert_success "hello world"
+}
+
+@test "mruby strategy overwrites non-writable files" {
+  # nop
+}
+
+@test "mruby strategy fetches rake if missing" {
+  # nop
+}
+
+@test "rbx uses bundle then rake" {
+  # nop
+}
+
+@test "fixes rbx binstubs" {
+  # nop
+}
+
+@test "JRuby build" {
+  # nop
+}
+
+@test "JRuby+Graal does not install launchers" {
+  # nop
+}
+
+@test "JRuby Java 7 missing" {
+  # nop
+}
+
+@test "JRuby Java is outdated" {
+  # nop
+}
+
+@test "JRuby Java 7 up-to-date" {
+  # nop
 }
 
 @test "non-writable TMPDIR aborts build" {

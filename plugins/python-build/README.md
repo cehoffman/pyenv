@@ -105,10 +105,24 @@ process.
   configure and make options for buildling CPython. These variables will
   be passed to Python only, not any dependent packages (e.g. libyaml).
 
+### Building as `--enable-shared`
+
+You can build CPython with `--enable-shared` to install a version with
+shared object.
+
+If `--enabled-shared` was found in `PYTHON_CONFIGURE_OPTS` or `CONFIGURE_OPTS`,
+`python-build` will automatically set `RPATH` to the pyenv's prefix directory.
+This means you don't have to set `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH` for
+the version(s) installed with `--enable-shared`.
+
+```sh
+$ env PYTHON_CONFIGURE_OPTS="--enable-shared` pyenv install 2.7.9
+```
+
 ### Checksum verification
 
-If you have the `md5`, `openssl`, or `md5sum` tool installed,
-python-build will automatically verify the MD5 checksum of each
+If you have the `shasum`, `openssl`, or `sha256sum` tool installed,
+python-build will automatically verify the SHA2 checksum of each
 downloaded package before installing it.
 
 Checksums are optional and specified as anchors on the package URL in
@@ -125,10 +139,10 @@ defintion file.
 You can point python-build to another mirror by specifying the
 `PYTHON_BUILD_MIRROR_URL` environment variable--useful if you'd like to
 run your own local mirror, for example. Package mirror URLs are
-constructed by joining this variable with the MD5 checksum of the
+constructed by joining this variable with the SHA2 checksum of the
 package file.
 
-If you don't have an MD5 program installed, python-build will skip the
+If you don't have an SHA2 program installed, python-build will skip the
 download mirror and use official URLs instead. You can force
 python-build to bypass the mirror by setting the
 `PYTHON_BUILD_SKIP_MIRROR` environment variable.

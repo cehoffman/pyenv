@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
+#
+# Usage: python-build [-kvp] <definition> <prefix>
+#        python-build --definitions
+#
+#   -k/--keep        Do not remove source tree after installation
+#   -v/--verbose     Verbose mode: print compilation status to stdout
+#   -p/--patch       Apply a patch from stdin before building
+#   --definitions    List all built-in definitions
+#   -g/--debug       Build a debug version
+#
 
-PYTHON_BUILD_VERSION="20140225"
+PYTHON_BUILD_VERSION="20141028"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
@@ -71,17 +81,41 @@ colorize() {
   fi
 }
 
+os_information() {
+  if type -p lsb_release >/dev/null; then
+    lsb_release -sir | xargs echo
+  elif type -p sw_vers >/dev/null; then
+    echo "OS X $(sw_vers -productVersion)"
+  elif [ -r /etc/os-release ]; then
+    source /etc/os-release
+    echo "$NAME" $VERSION_ID
+  else
+    local os="$(cat /etc/{centos,redhat,fedora,system}-release /etc/debian_version 2>/dev/null | head -1)"
+    echo "${os:-$(uname -sr)}"
+  fi
+}
+
+#  9.1  -> 901
+# 10.9  -> 1009
+# 10.10 -> 1010
+osx_version() {
+  local -a ver
+  IFS=. ver=( `sw_vers -productVersion` )
+  echo $(( ${ver[0]}*100 + ${ver[1]} ))
+}
+
 build_failed() {
   { echo
-    echo "BUILD FAILED"
+    colorize 1 "BUILD FAILED"
+    echo " ($(os_information) using $(version))"
     echo
 
     if ! rmdir "${BUILD_PATH}" 2>/dev/null; then
       echo "Inspect or clean up the working tree at ${BUILD_PATH}"
 
       if file_is_not_empty "$LOG_PATH"; then
-        echo "Results logged to ${LOG_PATH}"
-        echo
+        colorize 33 "Results logged to ${LOG_PATH}"
+        printf "\n\n"
         echo "Last 10 log lines:"
         tail -n 10 "$LOG_PATH"
       fi
@@ -103,18 +137,25 @@ file_is_not_empty() {
 }
 
 num_cpu_cores() {
-  local num=""
-  if [ "Darwin" = "$(uname -s)" ]; then
+  local num
+  case "$(uname -s)" in
+  Darwin | *BSD )
     num="$(sysctl -n hw.ncpu 2>/dev/null || true)"
-  elif [ -r /proc/cpuinfo ]; then
-    num="$(grep ^processor /proc/cpuinfo | wc -l)"
-    [ "$num" -gt 0 ] || num=""
-  fi
+    ;;
+  * )
+    num="$(grep ^processor /proc/cpuinfo 2>/dev/null | wc -l | xargs)"
+    num="${num#0}"
+    ;;
+  esac
   echo "${num:-2}"
 }
 
 install_package() {
   install_package_using "tarball" 1 "$@"
+}
+
+install_nightly_package() {
+  install_package_using "nightly_tarball" 2 "$@"
 }
 
 install_git() {
@@ -184,14 +225,32 @@ make_package() {
   popd >&4
 }
 
+compute_sha2() {
+  local output
+  if type shasum &>/dev/null; then
+    output="$(shasum -a 256 -b)" || return 1
+    echo "${output% *}"
+  elif type openssl &>/dev/null; then
+    local openssl="$(command -v "$(brew --prefix openssl 2>/dev/null)"/bin/openssl openssl | head -1)"
+    output="$("$openssl" dgst -sha256 2>/dev/null)" || return 1
+    echo "${output##* }"
+  elif type sha256sum &>/dev/null; then
+    output="$(sha256sum --quiet)" || return 1
+    echo "${output% *}"
+  else
+    return 1
+  fi
+}
+
 compute_md5() {
+  local output
   if type md5 &>/dev/null; then
     md5 -q
   elif type openssl &>/dev/null; then
-    local output="$(openssl md5)"
+    output="$(openssl md5)" || return 1
     echo "${output##* }"
   elif type md5sum &>/dev/null; then
-    local output="$(md5sum -b)"
+    output="$(md5sum -b)" || return 1
     echo "${output% *}"
   else
     return 1
@@ -199,8 +258,9 @@ compute_md5() {
 }
 
 verify_checksum() {
-  # If there's no MD5 support, return success
-  [ -n "$HAS_MD5_SUPPORT" ] || return 0
+  # If there's no SHA2 support, return success
+  [ -n "$HAS_SHA2_SUPPORT" ] || return 0
+  local checksum_command="compute_sha2"
 
   # If the specified filename doesn't exist, return success
   local filename="$1"
@@ -210,8 +270,14 @@ verify_checksum() {
   local expected_checksum=`echo "$2" | tr [A-Z] [a-z]`
   [ -n "$expected_checksum" ] || return 0
 
+  # If the checksum length is 32 chars, assume MD5, otherwise SHA2
+  if [ "${#expected_checksum}" -eq 32 ]; then
+    [ -n "$HAS_MD5_SUPPORT" ] || return 0
+    checksum_command="compute_md5"
+  fi
+
   # If the computed checksum is empty, return failure
-  local computed_checksum=`echo "$(compute_md5 < "$filename")" | tr [A-Z] [a-z]`
+  local computed_checksum=`echo "$($checksum_command < "$filename")" | tr [A-Z] [a-z]`
   [ -n "$computed_checksum" ] || return 1
 
   if [ "$expected_checksum" != "$computed_checksum" ]; then
@@ -245,7 +311,7 @@ http_head_curl() {
 }
 
 http_get_curl() {
-  curl -C - -o "${2:--}" -qsSLf "$1"
+  curl -q -o "${2:--}" -sSLf "$1"
 }
 
 http_head_wget() {
@@ -253,7 +319,7 @@ http_head_wget() {
 }
 
 http_get_wget() {
-  wget -nv -c -O "${2:--}" "$1"
+  wget -nv -O "${2:--}" "$1"
 }
 
 fetch_tarball() {
@@ -271,7 +337,7 @@ fetch_tarball() {
     fi
   fi
 
-  local tar_args="xzvf"
+  local tar_args="xzf"
   local package_filename="${package_name}.tar.gz"
 
   if [ "$package_url" != "${package_url%tgz}" ]; then
@@ -283,8 +349,14 @@ fetch_tarball() {
     tar_args="${tar_args/z/j}"
   fi
 
-  if ! symlink_tarball_from_cache "$package_filename" "$checksum"; then
-    echo "Downloading ${package_filename}..." >&2
+   if [ "$package_url" != "${package_url%xz}" ]; then
+     package_filename="${package_filename%.gz}.xz"
+     tar_args="${tar_args/z/J}"
+   fi
+
+  if ! reuse_existing_tarball "$package_filename" "$checksum"; then
+    local tarball_filename=$(basename $package_url)
+    echo "Downloading ${tarball_filename}..." >&2
     http head "$mirror_url" &&
     download_tarball "$mirror_url" "$package_filename" "$checksum" ||
     download_tarball "$package_url" "$package_filename" "$checksum"
@@ -300,12 +372,31 @@ fetch_tarball() {
   } >&4 2>&1
 }
 
-symlink_tarball_from_cache() {
-  [ -n "$PYTHON_BUILD_CACHE_PATH" ] || return 1
+fetch_nightly_tarball() {
+  local package_name="$1"
+  local package_url="$2"
+  local package_pattern="$3"
+  fetch_tarball "$1" "$2"
+  if [ ! -e "${package_name}" ]; then
+    local nightly_package_name="$(echo ${package_pattern})"
+    if [ -e "${nightly_package_name}" ]; then
+      ln -fs "${nightly_package_name}" "${package_name}"
+    fi
+  fi
+}
 
+reuse_existing_tarball() {
   local package_filename="$1"
-  local cached_package_filename="${PYTHON_BUILD_CACHE_PATH}/$package_filename"
   local checksum="$2"
+
+  # Reuse existing file in build location
+  if [ -e "$package_filename" ] && verify_checksum "$package_filename" "$checksum"; then
+    return 0
+  fi
+
+  # Reuse previously downloaded file in cache location
+  [ -n "$PYTHON_BUILD_CACHE_PATH" ] || return 1
+  local cached_package_filename="${PYTHON_BUILD_CACHE_PATH}/$package_filename"
 
   [ -e "$cached_package_filename" ] || return 1
   verify_checksum "$cached_package_filename" "$checksum" >&4 2>&1 || return 1
@@ -358,7 +449,14 @@ fetch_git() {
       popd >&4
     fi
 
-    git clone --depth 1 --branch "$git_ref" "$git_url" "${package_name}" >&4 2>&1
+    if [ -e "${package_name}" ]; then
+      ( cd "${package_name}"
+        git fetch --depth 1 origin "+${git_ref}"
+        git checkout -q -B "$git_ref" "origin/${git_ref}"
+      ) >&4 2>&1
+    else
+      git clone --depth 1 --branch "$git_ref" "$git_url" "${package_name}" >&4 2>&1
+    fi
   else
     echo "error: please install \`git\` and try again" >&2
     exit 1
@@ -392,7 +490,7 @@ fetch_hg() {
 
     hg clone --branch "$hg_ref" "$hg_url" "${package_name}" >&4 2>&1
   else
-    echo "error: please install \`hg\` and try again" >&2
+    echo "error: please install \`mercurial\` and try again" >&2
     exit 1
   fi
 }
@@ -407,7 +505,7 @@ fetch_svn() {
   if type svn &>/dev/null; then
     svn co -r "$svn_rev" "$svn_url" "${package_name}" >&4 2>&1
   else
-    echo "error: please install \`svn\` and try again" >&2
+    echo "error: please install Subversion and try again" >&2
     exit 1
   fi
 }
@@ -429,7 +527,7 @@ fetch_jar() {
 
   local package_filename="${package_name}.jar"
 
-  if ! symlink_tarball_from_cache "$package_filename" "$checksum"; then
+  if ! reuse_existing_tarball "$package_filename" "$checksum"; then
     echo "Downloading ${package_filename}..." >&2
     http head "$mirror_url" &&
     download_tarball "$mirror_url" "$package_filename" "$checksum" ||
@@ -463,7 +561,7 @@ fetch_zip() {
 
   local package_filename="${package_name}.zip"
 
-  if ! symlink_tarball_from_cache "$package_filename" "$checksum"; then
+  if ! reuse_existing_tarball "$package_filename" "$checksum"; then
     echo "Downloading ${package_filename}..." >&2
     http head "$mirror_url" &&
     download_tarball "$mirror_url" "$package_filename" "$checksum" ||
@@ -497,7 +595,7 @@ fetch_script() {
 
   local package_filename="${package_name}.sh" # TODO: extract suffix from ${package_url}
 
-  if ! symlink_tarball_from_cache "$package_filename" "$checksum"; then
+  if ! reuse_existing_tarball "$package_filename" "$checksum"; then
     echo "Downloading ${package_filename}..." >&2
     http head "$mirror_url" &&
     download_tarball "$mirror_url" "$package_filename" "$checksum" ||
@@ -556,6 +654,7 @@ build_package_standard() {
   local PACKAGE_MAKE_OPTS_ARRAY="${package_var_name}_MAKE_OPTS_ARRAY[@]"
   local PACKAGE_MAKE_INSTALL_OPTS="${package_var_name}_MAKE_INSTALL_OPTS"
   local PACKAGE_MAKE_INSTALL_OPTS_ARRAY="${package_var_name}_MAKE_INSTALL_OPTS_ARRAY[@]"
+  local PACKAGE_MAKE_INSTALL_TARGET="${package_var_name}_MAKE_INSTALL_TARGET"
   local PACKAGE_CFLAGS="${package_var_name}_CFLAGS"
 
   [ "$package_var_name" = "PYTHON" ] && use_homebrew_readline || true
@@ -563,13 +662,16 @@ build_package_standard() {
   ( if [ "${CFLAGS+defined}" ] || [ "${!PACKAGE_CFLAGS+defined}" ]; then
       export CFLAGS="$CFLAGS ${!PACKAGE_CFLAGS}"
     fi
+    if [ -z "$CC" ] && [ "$(uname -s)" = "Darwin" ] && [ "$(osx_version)" -ge 1010 ]; then
+      export CC=clang
+    fi
     ${!PACKAGE_CONFIGURE:-./configure} --prefix="${!PACKAGE_PREFIX_PATH:-$PREFIX_PATH}" \
                                        --libdir="${!PACKAGE_PREFIX_PATH:-$PREFIX_PATH}/lib" \
                                        $CONFIGURE_OPTS ${!PACKAGE_CONFIGURE_OPTS} "${!PACKAGE_CONFIGURE_OPTS_ARRAY}"
   ) >&4 2>&1
 
   { "$MAKE" $MAKE_OPTS ${!PACKAGE_MAKE_OPTS} "${!PACKAGE_MAKE_OPTS_ARRAY}"
-    "$MAKE" install $MAKE_INSTALL_OPTS ${!PACKAGE_MAKE_INSTALL_OPTS} "${!PACKAGE_MAKE_INSTALL_OPTS_ARRAY}"
+    "$MAKE" "${!PACKAGE_MAKE_INSTALL_TARGET:-install}" $MAKE_INSTALL_OPTS ${!PACKAGE_MAKE_INSTALL_OPTS} "${!PACKAGE_MAKE_INSTALL_OPTS_ARRAY}"
   } >&4 2>&1
 }
 
@@ -615,8 +717,12 @@ build_package_ree_installer() {
 build_package_rbx() {
   local package_name="$1"
 
-  { bundle --path=vendor/bundle
-    RUBYOPT="-rubygems $RUBYOPT" ./configure --prefix="$PREFIX_PATH" $RUBY_CONFIGURE_OPTS
+  { [ ! -e "Gemfile" ] || bundle --path=vendor/bundle
+    if [ -n "$RUBY_BUILD_CACHE_PATH" ]; then
+      mkdir -p vendor
+      ln -s "$RUBY_BUILD_CACHE_PATH" vendor/prebuilt
+    fi
+    RUBYOPT="-rubygems $RUBYOPT" ./configure --prefix="$PREFIX_PATH" $RUBY_CONFIGURE_OPTS "${RUBY_CONFIGURE_OPTS_ARRAY[@]}"
     rake install
     fix_rbx_gem_binstubs "$PREFIX_PATH"
     fix_rbx_irb "$PREFIX_PATH"
@@ -730,6 +836,18 @@ build_package_jython_builder() {
   ( cd "dist" && build_package_jython )
 }
 
+build_package_ironpython() {
+  mkdir -p "${PREFIX_PATH}/bin"
+  cp -fR . "${PREFIX_PATH}/bin"
+  chmod +x "${PREFIX_PATH}/bin/"*.exe
+  ( cd "${PREFIX_PATH}/bin" && ln -fs ipy.exe python )
+}
+
+build_package_ironpython_builder() {
+  xbuild Build.proj /t:Stage "/p:Mono=true;BaseConfiguration=Release" >&4 2>&1
+  ( cd "Stage/Release/IronPython-"* && build_package_ironpython )
+}
+
 pypy_architecture() {
   case "$(uname -s)" in
   "Darwin" ) echo "osx64" ;;
@@ -743,16 +861,28 @@ pypy_architecture() {
     esac
     ;;
   "CYGWIN"* | "MINGW"* ) echo "win32" ;;
+  "FreeBSD" )
+    case "$(uname -m)" in
+    "x86_64" ) echo "freebsd64" ;;
+    * ) return 1 ;;
+    esac
+    ;;
   * ) return 1 ;;
   esac
 }
 
 build_package_pypy() {
   build_package_copy
-  { if [ -x "${PREFIX_PATH}/bin/pypy" ] && [ ! -x "${PREFIX_PATH}/bin/python" ]; then
-      ( cd "${PREFIX_PATH}/bin" && ln -fs pypy python )
-    fi
-  } >&4 2>&1
+  mkdir -p "${PREFIX_PATH}/bin" "${PREFIX_PATH}/lib"
+  local pypy libpypy
+  shopt -s nullglob
+  for pypy in "bin/pypy"*; do
+    ( cd "${PREFIX_PATH}/bin" && ln -fs "$(basename "${pypy}")" "$(basename "${pypy}" | sed -e 's/pypy/python/')" )
+  done
+  for libpypy in "bin/libpypy-c."*; do
+    ( cd "${PREFIX_PATH}/lib" && ln -fs "../bin/$(basename "${libpypy}")" "$(basename "${libpypy}")" )
+  done
+  shopt -u nullglob
 }
 
 build_package_pypy_builder() {
@@ -764,10 +894,14 @@ build_package_pypy_builder() {
     echo "not a pypy source tree" 1>&3
     return 1
   fi
-  if [ -x "pypy-c" ] && [ ! -x "bin/pypy" ]; then
-    mkdir -p "bin"
-    mv -f "pypy-c" "bin/pypy"
-  fi
+  { mkdir -p "bin" "lib"
+    if [ -x "pypy-c" ]; then
+      mv -f "pypy-c" "bin/pypy"
+    fi
+    for libpypy in "libpypy-c."*; do
+      mv -f "${libpypy}" "bin/"
+    done
+  } >&4 2>&1
   build_package_pypy
 }
 
@@ -811,15 +945,12 @@ after_install_package() {
 
 setup_builtin_patches() {
   local package_name="$1"
-  local package_patch_path="${PYTHON_BUILD_ROOT}/share/python-build/patches/${DEFINITION_PATH##*/}/${package_name}"
+  local package_patch_path="${DEFINITION_PATH%/*}/patches/${DEFINITION_PATH##*/}/${package_name}"
 
   ORIG_HAS_PATCH="$HAS_PATCH"
 # Apply built-in patches if patch was not given from stdin
   if [ -z "$HAS_PATCH" ] && [ -d "${package_patch_path}" ]; then
-    local patch
-    { for patch in "${package_patch_path}"/*; do
-        [ -f "${patch}" ] && echo "${patch}"
-      done
+    { find "${package_patch_path}" -maxdepth 1 -type f
     } 2>/dev/null | sort | xargs cat 1>"${package_name}.patch"
     exec <&-
     exec <"${package_name}.patch"
@@ -844,11 +975,13 @@ fix_rbx_gem_binstubs() {
   local bindir="${prefix}/bin"
   local file binstub
   # Symlink Rubinius' `gems/bin/` into `bin/`
-  if [ -d "$gemdir" ]; then
+  if [ -d "$gemdir" ] && [ ! -L "$gemdir" ]; then
     for file in "$gemdir"/*; do
       binstub="${bindir}/${file##*/}"
       rm -f "$binstub"
-      sed -E "s:^#\!.+:#\!${bindir}/ruby:" < "$file" > "$binstub"
+      { echo "#!${bindir}/ruby"
+        cat "$file"
+      } > "$binstub"
       chmod +x "$binstub"
     done
     rm -rf "$gemdir"
@@ -918,6 +1051,9 @@ require_gcc() {
   fi
 
   export CC="$gcc"
+  if [ "$(uname -s)" = "Darwin" ] && [ "$(osx_version)" -ge 1010 ]; then
+    export MACOSX_DEPLOYMENT_TARGET=10.9
+  fi
 }
 
 locate_gcc() {
@@ -956,7 +1092,7 @@ verify_gcc() {
     return 1
   fi
 
-  local version="$("$gcc" --version || true)"
+  local version="$("$gcc" --version 2>/dev/null || true)"
   if [ -z "$version" ]; then
     return 1
   fi
@@ -968,44 +1104,30 @@ verify_gcc() {
   echo "$gcc"
 }
 
-require_cc() {
-  local cc=("$@")
-  while [ -n "${cc}" ]; do
-    { if [ "${#cc[@]}" -le 1 ]; then
-        "require_${cc}" # display last error
+require_llvm() {
+  local llvm_version="$1"
+  if [ "$(uname -s)" = "Darwin" ] && [ "$(osx_version)" -ge 1010 ]; then
+    if [[ "$PYTHON_CONFIGURE_OPTS" != *--llvm-* ]]; then
+      if [ "$llvm_version" = "3.2" ]; then
+        package_option python configure --prebuilt-name="llvm-3.2-x86_64-apple-darwin13.tar.bz2"
       else
-        "require_${cc}" 3>/dev/null
+        local llvm_prefix="$(brew --prefix llvm 2>/dev/null || true)"
+        local llvm_config="${llvm_prefix}/bin/llvm-config"
+        if [ -x "$llvm_config" ]; then
+          package_option python configure --llvm-config="$llvm_config"
+        fi
       fi
-    } && return 0
-    cc=("${cc[@]:1}")
-  done
-  return 1
-}
-
-require_clang() {
-  local clang="$(command -v "$CC" || command -v "clang" || true)"
-
-  if [ -z "$clang" ]; then
-    local esc=$'\033'
-    { echo
-      echo "${esc}[1mERROR${esc}[0m: This package must be compiled with clang, but python-build couldn't"
-      echo "find a suitable \`clang\` executable on your system. Please install clang"
-      echo "and try again."
-      echo
-    } >&3
-    return 1
+    fi
   fi
- 
-  export CC="$clang"
 }
 
 require_java() {
   local java="$(command -v java || true)"
 
   if [ -z "$java" ]; then
-    local esc=$'\033'
     { echo
-      echo "${esc}[1mERROR${esc}[0m: This package must be installed with java, but python-build couldn't"
+      colorize 1 "ERROR"
+      echo ": This package must be installed with java, but python-build couldn't"
       echo "find a suitable \`java\` executable on your system. Please install Java"
       echo "and try again."
       echo
@@ -1016,14 +1138,31 @@ require_java() {
   export JAVA="$java"
 }
 
+require_distro() {
+  for arg; do
+    if [[ "$(cat /etc/issue 2>/dev/null || true)" == "$1"* ]]; then
+      return 0
+    fi
+  done
+  { echo
+    colorize 1 "WARNING"
+    echo ": This binary distribution is built for $1."
+    echo "installed binary may not run expectedly on other platforms."
+    echo
+  } >&2
+  return 1
+}
+
 needs_yaml() {
+  [[ "$RUBY_CONFIGURE_OPTS" != *--with-libyaml-dir=* ]] &&
   ! use_homebrew_yaml
 }
 
 use_homebrew_yaml() {
   local libdir="$(brew --prefix libyaml 2>/dev/null || true)"
   if [ -d "$libdir" ]; then
-    package_option python configure CPPFLAGS="-I$libdir/include" LDFLAGS="-L$libdir/lib"
+    export CPPFLAGS="-I$libdir/include ${CPPFLAGS}"
+    export LDFLAGS="-L$libdir/lib ${LDFLAGS}"
   else
     return 1
   fi
@@ -1055,7 +1194,8 @@ use_homebrew_readline() {
   if ! configured_with_readline_dir; then
     local libdir="$(brew --prefix readline 2>/dev/null || true)"
     if [ -d "$libdir" ]; then
-      package_option python configure CPPFLAGS="-I$libdir/include" LDFLAGS="-L$libdir/lib"
+      export CPPFLAGS="-I$libdir/include ${CPPFLAGS}"
+      export LDFLAGS="-L$libdir/lib ${LDFLAGS}"
     else
       return 1
     fi
@@ -1064,14 +1204,16 @@ use_homebrew_readline() {
 
 has_broken_mac_openssl() {
   [ "$(uname -s)" = "Darwin" ] &&
-  [[ "$(openssl version 2>/dev/null || true)" = "OpenSSL 0.9.8"?* ]] &&
+  [[ "$(/usr/bin/openssl version 2>/dev/null || true)" = "OpenSSL 0.9.8"?* ]] &&
+  [[ "$RUBY_CONFIGURE_OPTS" != *--with-openssl-dir=* ]] &&
   ! use_homebrew_openssl
 }
 
 use_homebrew_openssl() {
   local ssldir="$(brew --prefix openssl 2>/dev/null || true)"
   if [ -d "$ssldir" ]; then
-    package_option python configure CPPFLAGS="-I$ssldir/include" LDFLAGS="-L$ssldir/lib"
+    export CPPFLAGS="-I$ssldir/include ${CPPFLAGS}"
+    export LDFLAGS="-L$ssldir/lib ${LDFLAGS}"
   else
     return 1
   fi
@@ -1085,14 +1227,15 @@ build_package_mac_openssl() {
   OPENSSLDIR="${OPENSSLDIR:-$OPENSSL_PREFIX_PATH/ssl}"
 
   # Tell Python to use this openssl for its extension.
-  package_option python configure CPPFLAGS="-I${OPENSSL_PREFIX_PATH}/include" LDFLAGS="-L${OPENSSL_PREFIX_PATH}/lib"
+  export CPPFLAGS="-I${OPENSSL_PREFIX_PATH}/include ${CPPFLAGS}"
+  export LDFLAGS="-L${OPENSSL_PREFIX_PATH}/lib ${LDFLAGS}"
 
   # Hint OpenSSL that we prefer a 64-bit build.
   export KERNEL_BITS="64"
   OPENSSL_CONFIGURE="${OPENSSL_CONFIGURE:-./config}"
 
   # Compile a shared lib with zlib dynamically linked, no kerberos.
-  package_option openssl configure --openssldir="$OPENSSLDIR" zlib-dynamic no-krb5 shared
+  package_option openssl configure --openssldir="$OPENSSLDIR" zlib-dynamic no-ssl2 no-ssl3 no-krb5 shared
 
   # Default MAKE_OPTS are -j 2 which can confuse the build. Thankfully, make
   # gives precedence to the last -j option, so we can override that.
@@ -1111,7 +1254,11 @@ build_package_verify_openssl() {
   "$RUBY_BIN" -e 'begin
     require "openssl"
   rescue LoadError
-    abort "The Ruby openssl extension was not compiled. Missing the OpenSSL lib?"
+    $stderr.puts "The Ruby openssl extension was not compiled. Missing the OpenSSL lib?"
+    $stderr.puts "Configure options used:"
+    require "rbconfig"; require "shellwords"
+    RbConfig::CONFIG.fetch("configure_args").shellsplit.each { |arg| $stderr.puts "  #{arg}" }
+    exit 1
   end' >&4 2>&1
 }
 
@@ -1168,23 +1315,52 @@ isolated_gem_install() {
 }
 
 apply_python_patch() {
+  local patchfile
   case "$1" in
   Python-* | jython-* | pypy-* )
-    patch -p0 -i "${2:--}"
+    patchfile="$(mktemp "${TMP}/python-patch.XXXXXX")"
+    cat "${2:--}" >"$patchfile"
+
+    local striplevel=0
+    grep -q '^diff --git a/' "$patchfile" && striplevel=1
+    patch -p$striplevel --force -i "$patchfile"
     ;;
   esac
 }
 
 verify_python() {
-  local python="$1"
   if [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-framework"* ]]; then
     # Only symlinks are installed in ${PREFIX_PATH}/bin
     rm -fr "${PREFIX_PATH}/bin"
     ln -fs "${PREFIX_PATH}/Python.framework/Versions/Current/bin" "${PREFIX_PATH}/bin"
   fi
-  if [ ! -e "${PREFIX_PATH}/bin/python" ] && [ -e "${PREFIX_PATH}/bin/${python}" ]; then
-    ( cd "${PREFIX_PATH}/bin" && ln -fs "${python}" "python" )
+
+  # Not create symlinks on `altinstall` (#255)
+  if [[ "$PYTHON_MAKE_INSTALL_TARGET" != *"altinstall"* ]]; then
+    local suffix="${1#python}"
+    local file link
+    shopt -s nullglob
+    for file in "${PREFIX_PATH}/bin"/*; do
+      unset link
+      case "${file}" in
+      */"python${suffix}-config" )
+        # Symlink `pythonX.Y-config` to `python-config` if `python-config` is missing (#296)
+        link="${file%/*}/python-config"
+      ;;
+      */*"-${suffix}" )
+        link="${file%%-${suffix}}"
+      ;;
+      */*"${suffix}" )
+        link="${file%%${suffix}}"
+      ;;
+      esac
+      if [ -n "$link" ] && [ ! -e "$link" ]; then
+        ( cd "${file%/*}" && ln -fs "${file##*/}" "${link##*/}" )
+      fi
+    done
+    shopt -u nullglob
   fi
+
   if [ ! -x "${PYTHON_BIN}" ]; then
     { colorize 1 "ERROR"
       echo ": invalid Python executable: ${PYTHON_BIN}"
@@ -1219,9 +1395,42 @@ verify_python_module() {
   fi
 }
 
+# Post-install check for Python 2.1.x
+build_package_verify_py21() {
+  verify_python "${2:-python2.1}"
+  try_python_module "readline" "GNU readline lib"
+  verify_python_module "binascii" "binascii"
+  # fixme: zlib doesn't link correctly on 64-bit Linux, due to being in
+  # /usr/x86_64-linux-gnu instead of /usr/lib
+  try_python_module "zlib" "zlib"
+  try_python_module "bz2" "bzip2 lib"
+}
+
+# Post-install check for Python 2.2.x
+build_package_verify_py22() {
+  verify_python "${2:-python2.2}"
+  try_python_module "readline" "GNU readline lib"
+  verify_python_module "binascii" "binascii"
+  # fixme: zlib doesn't link correctly on 64-bit Linux, due to being in
+  # /usr/x86_64-linux-gnu instead of /usr/lib
+  try_python_module "zlib" "zlib"
+  try_python_module "bz2" "bzip2 lib"
+}
+
+# Post-install check for Python 2.3.x
+build_package_verify_py23() {
+  verify_python "${2:-python2.3}"
+  try_python_module "readline" "GNU readline lib"
+  verify_python_module "binascii" "binascii"
+  # fixme: zlib doesn't link correctly on 64-bit Linux, due to being in
+  # /usr/x86_64-linux-gnu instead of /usr/lib
+  try_python_module "zlib" "zlib"
+  try_python_module "bz2" "bzip2 lib"
+}
+
 # Post-install check for Python 2.4.x
 build_package_verify_py24() {
-  verify_python "${2:-python2.4}"
+  verify_python "${2:-2.4}"
   try_python_module "readline" "GNU readline lib"
   verify_python_module "zlib" "zlib"
   try_python_module "bz2" "bzip2 lib"
@@ -1229,24 +1438,24 @@ build_package_verify_py24() {
 
 # Post-install check for Python 2.5.x
 build_package_verify_py25() {
-  build_package_verify_py24 "$1" "${2:-python2.5}"
+  build_package_verify_py24 "$1" "${2:-2.5}"
   try_python_module "sqlite3" "SQLite3 lib"
 }
 
 # Post-install check for Python 2.6.x
 build_package_verify_py26() {
-  build_package_verify_py25 "$1" "${2:-python2.6}"
+  build_package_verify_py25 "$1" "${2:-2.6}"
   verify_python_module "ssl" "OpenSSL lib"
 }
 
 # Post-install check for Python 2.7.x
 build_package_verify_py27() {
-  build_package_verify_py26 "$1" "${2:-python2.7}"
+  build_package_verify_py26 "$1" "${2:-2.7}"
 }
 
 # Post-install check for Python 3.0.x
 build_package_verify_py30() {
-  verify_python "${2:-python3.0}"
+  verify_python "${2:-3.0}"
   try_python_module "bz2" "bzip2 lib"
   try_python_module "readline" "GNU readline lib"
   verify_python_module "ssl" "OpenSSL lib"
@@ -1256,81 +1465,122 @@ build_package_verify_py30() {
 
 # Post-install check for Python 3.1.x
 build_package_verify_py31() {
-  build_package_verify_py30 "$1" "${2:-python3.1}"
+  build_package_verify_py30 "$1" "${2:-3.1}"
 }
 
 # Post-install check for Python 3.2.x
 build_package_verify_py32() {
-  build_package_verify_py31 "$1" "${2:-python3.2}"
+  build_package_verify_py31 "$1" "${2:-3.2}"
 }
 
 # Post-install check for Python 3.3.x
 build_package_verify_py33() {
-  build_package_verify_py32 "$1" "${2:-python3.3}"
+  build_package_verify_py32 "$1" "${2:-3.3}"
 }
 
 # Post-install check for Python 3.4.x
 build_package_verify_py34() {
-  build_package_verify_py33 "$1" "${2:-python3.4}"
+  build_package_verify_py33 "$1" "${2:-3.4}"
+}
+
+# Post-install check for Python 3.5.x
+build_package_verify_py35() {
+  build_package_verify_py34 "$1" "${2:-3.5}"
+}
+
+build_package_ez_setup() {
+  local ez_setup="${BUILD_PATH}/ez_setup.py"
+  rm -f "${ez_setup}"
+  { if [ "${EZ_SETUP+defined}" ] && [ -f "${EZ_SETUP}" ]; then
+      echo "Installing setuptools from ${EZ_SETUP}..." 1>&2
+      cat "${EZ_SETUP}"
+    else
+      [ -n "${EZ_SETUP_URL}" ] || EZ_SETUP_URL="https://bootstrap.pypa.io/ez_setup.py"
+      echo "Installing setuptools from ${EZ_SETUP_URL}..." 1>&2
+      http get "${EZ_SETUP_URL}"
+    fi
+  } 1> "${ez_setup}"
+  "${PYTHON_BIN}" "${ez_setup}" ${EZ_SETUP_OPTS} 1>&4 2>&1 || {
+    echo "error: failed to install setuptools via ez_setup.py" >&2
+    return 1
+  }
+}
+
+build_package_get_pip() {
+  local get_pip="${BUILD_PATH}/get-pip.py"
+  rm -f "${get_pip}"
+  { if [ "${GET_PIP+defined}" ] && [ -f "${GET_PIP}" ]; then
+      echo "Installing pip from ${GET_PIP}..." 1>&2
+      cat "${GET_PIP}"
+    else
+      [ -n "${GET_PIP_URL}" ] || GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
+      echo "Installing pip from ${GET_PIP_URL}..." 1>&2
+      http get "${GET_PIP_URL}"
+    fi
+  } 1> "${get_pip}"
+  "${PYTHON_BIN}" "${get_pip}" ${GET_PIP_OPTS} 1>&4 2>&1 || {
+    echo "error: failed to install pip via get-pip.py" >&2
+    return 1
+  }
 }
 
 build_package_ensurepip() {
-  { "$PYTHON_BIN" -m ensurepip
-  } >&4 2>&1
-
-  if [ ! -e "${PREFIX_PATH}/bin/pip" ]; then
-    local pip="$("$PYTHON_BIN" -c 'import sys;v=sys.version_info;sys.stdout.write("pip%d.%d"%(v[0],v[1]))')"
-    if [ -e "${PREFIX_PATH}/bin/${pip}" ]; then
-      ( cd "${PREFIX_PATH}/bin" && ln -fs "${pip}" "pip" )
-    fi
+  local ensurepip_opts
+  if [[ "$PYTHON_MAKE_INSTALL_TARGET" != *"altinstall"* ]]; then
+    ensurepip_opts="--altinstall"
   fi
+  "$PYTHON_BIN" -m ensurepip $ensurepip_opts 1>/dev/null 2>&1 || {
+    build_package_ez_setup "$@" && build_package_get_pip "$@"
+  } || return 1
 }
 
 version() {
-  echo "python-build ${PYTHON_BUILD_VERSION}"
+  local git_revision
+  # Read the revision from git if the remote points to "python-build" repository
+  if GIT_DIR="$PYTHON_BUILD_INSTALL_PREFIX/../../.git" git remote -v 2>/dev/null | grep -q /pyenv; then
+    git_revision="$(GIT_DIR="$PYTHON_BUILD_INSTALL_PREFIX/../../.git" git describe --tags HEAD 2>/dev/null || true)"
+    git_revision="${git_revision#v}"
+  fi
+  echo "python-build ${git_revision:-$PYTHON_BUILD_VERSION}"
 }
 
 usage() {
-  { version
-    echo "usage: python-build [-k|--keep] [-v|--verbose] [-p|--patch] [-g|--debug] definition prefix"
-    echo "       python-build --definitions"
-  } >&2
-
-  if [ -z "$1" ]; then
-    exit 1
-  fi
+  sed -ne '/^#/!q;s/.\{1,2\}//;1,2d;p' < "$0"
+  [ -z "$1" ] || exit "$1"
 }
 
 list_definitions() {
-  { for definition in "${PYTHON_BUILD_ROOT}/share/python-build/"*; do
-      [ -f "${definition}" ] && echo "${definition##*/}"
+  { for DEFINITION_DIR in "${PYTHON_BUILD_DEFINITIONS[@]}"; do
+      [ -d "$DEFINITION_DIR" ] && find "$DEFINITION_DIR" -maxdepth 1 -type f -print0 | xargs -0 -n 1 basename 2>/dev/null
     done
-  } | sort
+  } | sort_versions | uniq
 }
 
+sort_versions() {
+  sed 'h; s/[+-]/./g; s/.p\([[:digit:]]\)/.z\1/; s/$/.z/; G; s/\n/ /' | \
+    LC_ALL=C sort -t. -k 1,1 -k 2,2n -k 3,3n -k 4,4n -k 5,5n | awk '{print $2}'
+}
 
 
 unset VERBOSE
 unset KEEP_BUILD_PATH
 unset HAS_PATCH
-PYTHON_BUILD_ROOT="$(abs_dirname "$0")/.."
 unset DEBUG
+
+PYTHON_BUILD_INSTALL_PREFIX="$(abs_dirname "$0")/.."
+
+OLDIFS="$IFS"
+IFS=: PYTHON_BUILD_DEFINITIONS=($PYTHON_BUILD_DEFINITIONS ${PYTHON_BUILD_ROOT:-$PYTHON_BUILD_INSTALL_PREFIX}/share/python-build)
+IFS="$OLDIFS"
 
 parse_options "$@"
 
 for option in "${OPTIONS[@]}"; do
   case "$option" in
   "h" | "help" )
-    usage without_exiting
-    { echo
-      echo "  -k/--keep        Do not remove source tree after installation"
-      echo "  -v/--verbose     Verbose mode: print compilation status to stdout"
-      echo "  -p/--patch       Apply a patch from stdin before building"
-      echo "  -g/--debug       Build a debug version"
-      echo "  --definitions    List all built-in definitions"
-      echo
-    } >&2
-    exit 0
+    version
+    echo
+    usage 0
     ;;
   "definitions" )
     list_definitions
@@ -1355,14 +1605,20 @@ for option in "${OPTIONS[@]}"; do
   esac
 done
 
+[ "${#ARGUMENTS[@]}" -eq 2 ] || usage 1 >&2
+
 DEFINITION_PATH="${ARGUMENTS[0]}"
 if [ -z "$DEFINITION_PATH" ]; then
-  usage
+  usage 1 >&2
 elif [ ! -f "$DEFINITION_PATH" ]; then
-  BUILTIN_DEFINITION_PATH="${PYTHON_BUILD_ROOT}/share/python-build/${DEFINITION_PATH}"
-  if [ -e "$BUILTIN_DEFINITION_PATH" ]; then
-    DEFINITION_PATH="$BUILTIN_DEFINITION_PATH"
-  else
+  for DEFINITION_DIR in "${PYTHON_BUILD_DEFINITIONS[@]}"; do
+    if [ -f "${DEFINITION_DIR}/${DEFINITION_PATH}" ]; then
+      DEFINITION_PATH="${DEFINITION_DIR}/${DEFINITION_PATH}"
+      break
+    fi
+  done
+
+  if [ ! -f "$DEFINITION_PATH" ]; then
     echo "python-build: definition not found: ${DEFINITION_PATH}" >&2
     exit 2
   fi
@@ -1370,7 +1626,7 @@ fi
 
 PREFIX_PATH="${ARGUMENTS[1]}"
 if [ -z "$PREFIX_PATH" ]; then
-  usage
+  usage 1 >&2
 elif [ "${PREFIX_PATH#/}" = "$PREFIX_PATH" ]; then
   PREFIX_PATH="${PWD}/${PREFIX_PATH}"
 fi
@@ -1381,8 +1637,23 @@ else
   TMP="${TMPDIR%/}"
 fi
 
-if [ ! -w "$TMP" ] || [ ! -x "$TMP" ]; then
+# Check if TMPDIR is accessible and can hold executables.
+tmp_executable="${TMP}/python-build-test.$$"
+noexec=""
+if mkdir -p "$TMP" && touch "$tmp_executable" 2>/dev/null; then
+  cat > "$tmp_executable" <<-EOF
+	#!${BASH}
+	exit 0
+	EOF
+  chmod +x "$tmp_executable"
+else
   echo "python-build: TMPDIR=$TMP is set to a non-accessible location" >&2
+  exit 1
+fi
+"$tmp_executable" 2>/dev/null || noexec=1
+rm -f "$tmp_executable"
+if [ -n "$noexec" ]; then
+  echo "python-build: TMPDIR=$TMP cannot hold executables (partition possibly mounted with \`noexec\`)" >&2
   exit 1
 fi
 
@@ -1397,7 +1668,7 @@ fi
 #fi
 
 if [ -z "$MAKE" ]; then
-  if [[ "FreeBSD" = "$(uname -s)" ]]; then
+  if [ "FreeBSD" = "$(uname -s)" ] && [ "$(uname -r | sed 's/[^[:digit:]].*//')" -lt 10 ]; then
     export MAKE="gmake"
   else
     export MAKE="make"
@@ -1411,7 +1682,7 @@ else
 fi
 
 if [ -z "$PYTHON_BUILD_MIRROR_URL" ]; then
-  PYTHON_BUILD_MIRROR_URL="http://yyuu.github.io/pythons"
+  PYTHON_BUILD_MIRROR_URL="https://yyuu.github.io/pythons"
 else
   PYTHON_BUILD_MIRROR_URL="${PYTHON_BUILD_MIRROR_URL%/}"
 fi
@@ -1420,11 +1691,17 @@ if [ -n "$PYTHON_BUILD_SKIP_MIRROR" ]; then
   unset PYTHON_BUILD_MIRROR_URL
 fi
 
+if echo test | compute_sha2 >/dev/null; then
+  HAS_SHA2_SUPPORT=1
+else
+  unset HAS_SHA2_SUPPORT
+  unset PYTHON_BUILD_MIRROR_URL
+fi
+
 if echo test | compute_md5 >/dev/null; then
   HAS_MD5_SUPPORT=1
 else
   unset HAS_MD5_SUPPORT
-  unset PYTHON_BUILD_MIRROR_URL
 fi
 
 # Add an option to build a debug version of Python (#11)
@@ -1432,7 +1709,7 @@ if [ -n "$DEBUG" ]; then
   package_option python configure --with-pydebug
 fi
 
-# python-build: Set `RPATH` if `--enable-shared` was given (#65, #66, 82)
+# python-build: Set `RPATH` if `--enable-shared` was given (#65, #66, #82)
 if [[ "$CONFIGURE_OPTS" == *"--enable-shared"* ]] || [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-shared"* ]]; then
   # The ld on Darwin embeds the full paths to each dylib by default
   if [[ "$LDFLAGS" != *"-rpath="* ]] && [[ "Darwin" != "$(uname -s)" ]]; then
@@ -1440,8 +1717,17 @@ if [[ "$CONFIGURE_OPTS" == *"--enable-shared"* ]] || [[ "$PYTHON_CONFIGURE_OPTS"
   fi
 fi
 
+# python-build: Set `RPATH` if --shared` was given for PyPy (#244)
+if [[ "$PYPY_OPTS" == *"--shared"* ]]; then
+  export LDFLAGS="-Wl,-rpath=${PREFIX_PATH}/lib ${LDFLAGS}"
+fi
+
 # Add support for framework installation (`--enable-framework`) of CPython (#55, #99)
 if [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-framework"* ]]; then
+  if [[ "Darwin" != "$(uname -s)" ]]; then
+    echo "python-build: framework installation is not supported." >&2
+    exit 1
+  fi
   create_framework_dirs() {
     local version="$(echo "$1" | sed -E 's/^[^0-9]*([0-9]+\.[0-9]+).*$/\1/')"
     mkdir -p "${PREFIX_PATH}/Python.framework/Versions/${version}"
@@ -1456,21 +1742,74 @@ if [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-framework"* ]]; then
   package_option python configure --enable-framework="${PREFIX_PATH}"
 fi
 
+# Build against universal SDK (#219, #220)
+if [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-universalsdk"* ]]; then
+  if [[ "Darwin" != "$(uname -s)" ]]; then
+    echo "python-build: universal installation is not supported." >&2
+    exit 1
+  fi
+  package_option python configure --enable-universalsdk=/ --with-universal-archs=intel
+fi
+
 # SSL Certificate error with older wget that does not support Server Name Indication (#60)
 if ! command -v curl 1>/dev/null 2>&1 && [[ "$(wget --version 2>/dev/null || true)" = "GNU Wget 1.1"[0-3]* ]]; then
   echo "python-build: wget (< 1.14) doesn't support Server Name Indication. Please install curl (>= 7.18.1) and try again" >&2
   exit 1
 fi
 
+# Unset `PIP_REQUIRE_VENV` during build (#216)
+unset PIP_REQUIRE_VENV
+unset PIP_REQUIRE_VIRTUALENV
+
 # pydistutils.cfg may corrupt install location of Python libraries (#35, #111)
 if [ -e "$HOME/.pydistutils.cfg" ]; then
-  echo "python-build: Please make sure you remove any previous custom paths from your $HOME/.pydistutils.cfg file." >&2
-  exit 1
+  { colorize 1 "WARNING"
+    echo ": Please make sure you remove any previous custom paths from your $HOME/.pydistutils.cfg file."
+  } >&2
 fi
+
+# Download specified version of ez_setup.py/get-pip.py (#202)
+if [ -n "${SETUPTOOLS_VERSION}" ]; then
+  EZ_SETUP_URL="https://bitbucket.org/pypa/setuptools/raw/${SETUPTOOLS_VERSION}/ez_setup.py"
+fi
+if [ -n "${PIP_VERSION}" ]; then
+  GET_PIP_URL="https://raw.githubusercontent.com/pypa/pip/${PIP_VERSION}/contrib/get-pip.py"
+fi
+
+# Set MACOSX_DEPLOYMENT_TARGET from the product version of OS X (#219, #220)
+if [[ "Darwin" == "$(uname -s)" ]]; then
+  MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || true)"
+  MACOS_VERSION_ARRAY=(${MACOS_VERSION//\./ })
+  if [ "${#MACOS_VERSION_ARRAY[@]}" -ge 2 ]; then
+    export MACOSX_DEPLOYMENT_TARGET="${MACOS_VERSION_ARRAY[0]}.${MACOS_VERSION_ARRAY[1]}"
+  fi
+fi
+
+python_bin_suffix() {
+  local version_name version_info
+  case "$1" in
+  2.* | 3.* )
+    version_name="$1"
+    version_name="${version_name%-dev}"
+    version_name="${version_name%-rc*}"
+    version_name="${version_name%rc*}"
+    version_info=(${version_name//./ })
+    echo "${version_info[0]}.${version_info[1]}"
+    ;;
+  stackless-2.* | stackless-3.* )
+    version_name="${1#stackless-}"
+    version_name="${version_name%-dev}"
+    version_name="${version_name%-rc*}"
+    version_name="${version_name%rc*}"
+    version_info=(${version_name//./ })
+    echo "${version_info[0]}.${version_info[1]}"
+    ;;
+  esac
+}
 
 SEED="$(date "+%Y%m%d%H%M%S").$$"
 LOG_PATH="${TMP}/python-build.${SEED}.log"
-PYTHON_BIN="${PREFIX_PATH}/bin/python"
+PYTHON_BIN="${PREFIX_PATH}/bin/python$(python_bin_suffix "${DEFINITION_PATH##*/}")"
 CWD="$(pwd)"
 
 if [ -z "$PYTHON_BUILD_BUILD_PATH" ]; then
