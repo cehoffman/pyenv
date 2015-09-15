@@ -6,11 +6,13 @@
 #   -k/--keep        Do not remove source tree after installation
 #   -v/--verbose     Verbose mode: print compilation status to stdout
 #   -p/--patch       Apply a patch from stdin before building
+#   -4/--ipv4        Resolve names to IPv4 addresses only
+#   -6/--ipv6        Resolve names to IPv6 addresses only
 #   --definitions    List all built-in definitions
 #   -g/--debug       Build a debug version
 #
 
-PYTHON_BUILD_VERSION="20141028"
+PYTHON_BUILD_VERSION="20150818"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
@@ -231,7 +233,7 @@ compute_sha2() {
     output="$(shasum -a 256 -b)" || return 1
     echo "${output% *}"
   elif type openssl &>/dev/null; then
-    local openssl="$(command -v "$(brew --prefix openssl 2>/dev/null)"/bin/openssl openssl | head -1)"
+    local openssl="$(command -v "$(brew --prefix openssl 2>/dev/null || true)"/bin/openssl openssl | head -1)"
     output="$("$openssl" dgst -sha256 2>/dev/null)" || return 1
     echo "${output##* }"
   elif type sha256sum &>/dev/null; then
@@ -307,19 +309,31 @@ http() {
 }
 
 http_head_curl() {
-  curl -qsILf "$1" >&4 2>&1
+  options=""
+  [ -n "${IPV4}" ] && options="--ipv4"
+  [ -n "${IPV6}" ] && options="--ipv6"
+  curl -qsILf ${options} "$1" >&4 2>&1
 }
 
 http_get_curl() {
-  curl -q -o "${2:--}" -sSLf "$1"
+  options=""
+  [ -n "${IPV4}" ] && options="--ipv4"
+  [ -n "${IPV6}" ] && options="--ipv6"
+  curl -q -o "${2:--}" -sSLf ${options} "$1"
 }
 
 http_head_wget() {
-  wget -q --spider "$1" >&4 2>&1
+  options=""
+  [ -n "${IPV4}" ] && options="--inet4-only"
+  [ -n "${IPV6}" ] && options="--inet6-only"
+  wget -q --spider ${options} "$1" >&4 2>&1
 }
 
 http_get_wget() {
-  wget -nv -O "${2:--}" "$1"
+  options=""
+  [ -n "${IPV4}" ] && options="--inet4-only"
+  [ -n "${IPV6}" ] && options="--inet6-only"
+  wget -nv ${options} -O "${2:--}" "$1"
 }
 
 fetch_tarball() {
@@ -534,7 +548,9 @@ fetch_jar() {
     download_tarball "$package_url" "$package_filename" "$checksum"
   fi
 
-  { if $JAVA -jar ${package_name}.jar -s -d ${package_name}; then
+  # Must use full path to jar and destination directory:
+  #   http://bugs.jython.org/issue2350
+  { if $JAVA -jar $PWD/${package_name}.jar -s -d $PWD/${package_name}; then
       if [ -z "$KEEP_BUILD_PATH" ]; then
         rm -f "$package_filename"
       else
@@ -874,10 +890,18 @@ pypy_architecture() {
 build_package_pypy() {
   build_package_copy
   mkdir -p "${PREFIX_PATH}/bin" "${PREFIX_PATH}/lib"
-  local pypy libpypy
+  local pypy libpypy python
   shopt -s nullglob
   for pypy in "bin/pypy"*; do
-    ( cd "${PREFIX_PATH}/bin" && ln -fs "$(basename "${pypy}")" "$(basename "${pypy}" | sed -e 's/pypy/python/')" )
+    case "${pypy##*/}" in
+    "pypy-stm" )
+      python="bin/python"
+      ;;
+    * )
+      python="$(basename "${pypy}" | sed -e 's/pypy/python/')"
+      ;;
+    esac
+    ( cd "${PREFIX_PATH}/bin" && ln -fs "${pypy##*/}" "${python##*/}" )
   done
   for libpypy in "bin/libpypy-c."*; do
     ( cd "${PREFIX_PATH}/lib" && ln -fs "../bin/$(basename "${libpypy}")" "$(basename "${libpypy}")" )
@@ -980,7 +1004,7 @@ fix_rbx_gem_binstubs() {
       binstub="${bindir}/${file##*/}"
       rm -f "$binstub"
       { echo "#!${bindir}/ruby"
-        cat "$file"
+        grep -v '^#!' "$file"
       } > "$binstub"
       chmod +x "$binstub"
     done
@@ -997,7 +1021,7 @@ fix_rbx_irb() {
 }
 
 require_java7() {
-  local version="$(java -version 2>&1 | head -1)"
+  local version="$(java -version 2>&1 | grep '\(java\|openjdk\) version' | head -1)"
   if [[ $version != *1.[789]* ]]; then
     colorize 1 "ERROR" >&3
     echo ": Java 7 required. Please install a 1.7-compatible JRE." >&3
@@ -1108,17 +1132,46 @@ require_llvm() {
   local llvm_version="$1"
   if [ "$(uname -s)" = "Darwin" ] && [ "$(osx_version)" -ge 1010 ]; then
     if [[ "$PYTHON_CONFIGURE_OPTS" != *--llvm-* ]]; then
-      if [ "$llvm_version" = "3.2" ]; then
+      case "$llvm_version" in
+      3.2 )
         package_option python configure --prebuilt-name="llvm-3.2-x86_64-apple-darwin13.tar.bz2"
-      else
-        local llvm_prefix="$(brew --prefix llvm 2>/dev/null || true)"
-        local llvm_config="${llvm_prefix}/bin/llvm-config"
-        if [ -x "$llvm_config" ]; then
+        ;;
+      3.5 )
+        local llvm_config="$(locate_llvm "$llvm_version")"
+        if [ -n "$llvm_config" ]; then
           package_option python configure --llvm-config="$llvm_config"
+        else
+          { echo
+            colorize 1 "ERROR"
+            echo ": Rubinius will not be able to compile using Apple's LLVM-based "
+            echo "build tools on OS X. You will need to install LLVM 3.5 first."
+            echo
+            colorize 1 "TO FIX THE PROBLEM"
+            echo ": Install Homebrew's llvm package with this"
+            echo -n "command: "
+            colorize 4 "brew tap homebrew/versions ; brew install llvm35"
+            echo
+          } >&3
+          return 1
         fi
-      fi
+        ;;
+      esac
     fi
   fi
+}
+
+locate_llvm() {
+  local llvm_version="$1"
+  local package llvm_config
+  shopt -s nullglob
+  for package in `brew list 2>/dev/null | grep "^llvm"`; do
+    llvm_config="$(echo "$(brew --prefix "$package")/bin/llvm-config"*)"
+    if [ -n "$llvm_config" ] && [[ "$("$llvm_config" --version)" = "$llvm_version"* ]]; then
+      echo "$llvm_config"
+      break
+    fi
+  done
+  shopt -u nullglob
 }
 
 require_java() {
@@ -1140,13 +1193,13 @@ require_java() {
 
 require_distro() {
   for arg; do
-    if [[ "$(cat /etc/issue 2>/dev/null || true)" == "$1"* ]]; then
+    if [[ "$(cat /etc/issue 2>/dev/null || true)" == "$arg"* ]]; then
       return 0
     fi
   done
   { echo
     colorize 1 "WARNING"
-    echo ": This binary distribution is built for $1."
+    echo ": This binary distribution is built for the following distro(s): $@."
     echo "installed binary may not run expectedly on other platforms."
     echo
   } >&2
@@ -1488,6 +1541,11 @@ build_package_verify_py35() {
   build_package_verify_py34 "$1" "${2:-3.5}"
 }
 
+# Post-install check for Python 3.6.x
+build_package_verify_py36() {
+  build_package_verify_py35 "$1" "${2:-3.6}"
+}
+
 build_package_ez_setup() {
   local ez_setup="${BUILD_PATH}/ez_setup.py"
   rm -f "${ez_setup}"
@@ -1518,7 +1576,7 @@ build_package_get_pip() {
       http get "${GET_PIP_URL}"
     fi
   } 1> "${get_pip}"
-  "${PYTHON_BIN}" "${get_pip}" ${GET_PIP_OPTS} 1>&4 2>&1 || {
+  "${PYTHON_BIN}" -s "${get_pip}" ${GET_PIP_OPTS} 1>&4 2>&1 || {
     echo "error: failed to install pip via get-pip.py" >&2
     return 1
   }
@@ -1526,12 +1584,12 @@ build_package_get_pip() {
 
 build_package_ensurepip() {
   local ensurepip_opts
-  if [[ "$PYTHON_MAKE_INSTALL_TARGET" != *"altinstall"* ]]; then
+  # Install as `--altinstall` if the Python is installed as `altinstall` (#255)
+  if [[ "$PYTHON_MAKE_INSTALL_TARGET" == *"altinstall"* ]]; then
     ensurepip_opts="--altinstall"
   fi
-  "$PYTHON_BIN" -m ensurepip $ensurepip_opts 1>/dev/null 2>&1 || {
-    build_package_ez_setup "$@" && build_package_get_pip "$@"
-  } || return 1
+  # FIXME: `--altinstall` with `get-pip.py`
+  "$PYTHON_BIN" -s -m ensurepip ${ensurepip_opts} 1>/dev/null 2>&1 || build_package_get_pip "$@" || return 1
 }
 
 version() {
@@ -1566,6 +1624,8 @@ unset VERBOSE
 unset KEEP_BUILD_PATH
 unset HAS_PATCH
 unset DEBUG
+unset IPV4
+unset IPV6
 
 PYTHON_BUILD_INSTALL_PREFIX="$(abs_dirname "$0")/.."
 
@@ -1597,6 +1657,12 @@ for option in "${OPTIONS[@]}"; do
     ;;
   "g" | "debug" )
     DEBUG=true
+    ;;
+  "4" | "ipv4")
+    IPV4=true
+    ;;
+  "6" | "ipv6")
+    IPV6=true
     ;;
   "version" )
     version
@@ -1778,10 +1844,12 @@ fi
 
 # Set MACOSX_DEPLOYMENT_TARGET from the product version of OS X (#219, #220)
 if [[ "Darwin" == "$(uname -s)" ]]; then
-  MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || true)"
-  MACOS_VERSION_ARRAY=(${MACOS_VERSION//\./ })
-  if [ "${#MACOS_VERSION_ARRAY[@]}" -ge 2 ]; then
-    export MACOSX_DEPLOYMENT_TARGET="${MACOS_VERSION_ARRAY[0]}.${MACOS_VERSION_ARRAY[1]}"
+  if [ -z "${MACOSX_DEPLOYMENT_TARGET}" ]; then
+    MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || true)"
+    MACOS_VERSION_ARRAY=(${MACOS_VERSION//\./ })
+    if [ "${#MACOS_VERSION_ARRAY[@]}" -ge 2 ]; then
+      export MACOSX_DEPLOYMENT_TARGET="${MACOS_VERSION_ARRAY[0]}.${MACOS_VERSION_ARRAY[1]}"
+    fi
   fi
 fi
 
