@@ -12,39 +12,42 @@ if [ -n "$PYENV_DEBUG" ]; then
   set -x
 fi
 
-if enable -f "${0%/*}"/../libexec/pyenv-realpath.dylib realpath 2>/dev/null; then
+abort() {
+  { if [ "$#" -eq 0 ]; then cat -
+    else echo "pyenv: $*"
+    fi
+  } >&2
+  exit 1
+}
+
+if enable -f "${BASH_SOURCE%/*}"/../libexec/pyenv-realpath.dylib realpath 2>/dev/null; then
   abs_dirname() {
     local path="$(realpath "$1")"
     echo "${path%/*}"
   }
 else
-  if [ -n "$PYENV_NATIVE_EXT" ]; then
-    echo "pyenv: failed to load \`realpath' builtin" >&2
-    exit 1
-  fi
-READLINK=$(type -p greadlink readlink | head -1)
-if [ -z "$READLINK" ]; then
-  echo "pyenv: cannot find readlink - are you missing GNU coreutils?" >&2
-  exit 1
-fi
+  [ -z "$PYENV_NATIVE_EXT" ] || abort "failed to load \`realpath' builtin"
 
-resolve_link() {
-  $READLINK "$1"
-}
+  READLINK=$(type -p greadlink readlink | head -1)
+  [ -n "$READLINK" ] || abort "cannot find readlink - are you missing GNU coreutils?"
 
-abs_dirname() {
-  local cwd="$(pwd)"
-  local path="$1"
+  resolve_link() {
+    $READLINK "$1"
+  }
 
-  while [ -n "$path" ]; do
-    cd "${path%/*}"
-    local name="${path##*/}"
-    path="$(resolve_link "$name" || true)"
-  done
+  abs_dirname() {
+    local cwd="$PWD"
+    local path="$1"
 
-  pwd
-  cd "$cwd"
-}
+    while [ -n "$path" ]; do
+      cd "${path%/*}"
+      local name="${path##*/}"
+      path="$(resolve_link "$name" || true)"
+    done
+
+    pwd
+    cd "$cwd"
+  }
 fi
 
 if [ -z "${PYENV_ROOT}" ]; then
@@ -54,14 +57,24 @@ else
 fi
 export PYENV_ROOT
 
+# Transfer PYENV_FILE_ARG (from shims) into PYENV_DIR.
 if [ -z "${PYENV_DIR}" ]; then
-  PYENV_DIR="$(pwd)"
+  if [ -n "${PYENV_FILE_ARG}" ]; then
+    if [ -L "${PYENV_FILE_ARG}" ]; then
+      PYENV_DIR="$(abs_dirname "${PYENV_FILE_ARG}")"
+    else
+      PYENV_DIR="${PYENV_FILE_ARG%/*}"
+    fi
+    export PYENV_DIR
+    unset PYENV_FILE_ARG
+  fi
+fi
+
+if [ -z "${PYENV_DIR}" ]; then
+  PYENV_DIR="$PWD"
 else
-  cd "$PYENV_DIR" 2>/dev/null || {
-    echo "pyenv: cannot change working directory to \`$PYENV_DIR'"
-    exit 1
-  } >&2
-  PYENV_DIR="$(pwd)"
+  cd "$PYENV_DIR" 2>/dev/null || abort "cannot change working directory to \`$PYENV_DIR'"
+  PYENV_DIR="$PWD"
   cd "$OLDPWD"
 fi
 export PYENV_DIR
@@ -91,20 +104,26 @@ shopt -u nullglob
 
 command="$1"
 case "$command" in
-"" | "-h" | "--help" )
-  echo -e "$(pyenv---version)\n$(pyenv-help)" >&2
+"" )
+  { pyenv---version
+    pyenv-help
+  } | abort
   ;;
-"-v" )
+-v | --version )
   exec pyenv---version
+  ;;
+-h | --help )
+  exec pyenv-help
   ;;
 * )
   command_path="$(command -v "pyenv-$command" || true)"
-  if [ -z "$command_path" ]; then
-    echo "pyenv: no such command \`$command'" >&2
-    exit 1
-  fi
+  [ -n "$command_path" ] || abort "no such command \`$command'"
 
   shift 1
-  exec "$command_path" "$@"
+  if [ "$1" = --help ]; then
+    exec pyenv-help "$command"
+  else
+    exec "$command_path" "$@"
+  fi
   ;;
 esac

@@ -1,15 +1,17 @@
 # Simple Python Version Management: pyenv
 
-[![Build Status](https://travis-ci.org/yyuu/pyenv.svg)](https://travis-ci.org/yyuu/pyenv)
+[![Join the chat at https://gitter.im/yyuu/pyenv](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/yyuu/pyenv?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
+[![Build Status](https://travis-ci.org/yyuu/pyenv.svg?branch=master)](https://travis-ci.org/yyuu/pyenv)
 
 pyenv lets you easily switch between multiple versions of Python. It's
 simple, unobtrusive, and follows the UNIX tradition of single-purpose
 tools that do one thing well.
 
-This project was forked from [rbenv](https://github.com/sstephenson/rbenv) and
-[ruby-build](https://github.com/sstephenson/ruby-build), and modified for Python.
+This project was forked from [rbenv](https://github.com/rbenv/rbenv) and
+[ruby-build](https://github.com/rbenv/ruby-build), and modified for Python.
 
-<img src="http://gyazo.com/9c829fafdf5e58880c820349c4e9197e.png?1346414267" width="849" height="454" />
+<img src="https://i.gyazo.com/699a58927b77e46e71cd674c7fc7a78d.png" width="735" height="490" />
 
 
 ### pyenv _does..._
@@ -19,7 +21,7 @@ This project was forked from [rbenv](https://github.com/sstephenson/rbenv) and
 * Allow you to **override the Python version** with an environment
   variable.
 * Search commands from **multiple versions of Python at a time**.
-  This may be helpful to test across Python versions with [tox](http://pypi.python.org/pypi/tox).
+  This may be helpful to test across Python versions with [tox](https://pypi.python.org/pypi/tox).
 
 
 ### In contrast with pythonbrew and pythonz, pyenv _does not..._
@@ -28,7 +30,7 @@ This project was forked from [rbenv](https://github.com/sstephenson/rbenv) and
     There is no bootstrap problem of Python.
 * **Need to be loaded into your shell.** Instead, pyenv's shim
     approach works by adding a directory to your `$PATH`.
-* **Manage virtualenv.** Of course, you can create [virtualenv](http://pypi.python.org/pypi/virtualenv)
+* **Manage virtualenv.** Of course, you can create [virtualenv](https://pypi.python.org/pypi/virtualenv)
     yourself, or [pyenv-virtualenv](https://github.com/yyuu/pyenv-virtualenv)
     to automate the process.
 
@@ -47,7 +49,7 @@ This project was forked from [rbenv](https://github.com/sstephenson/rbenv) and
   * [Basic GitHub Checkout](#basic-github-checkout)
     * [Upgrading](#upgrading)
     * [Homebrew on Mac OS X](#homebrew-on-mac-os-x)
-    * [Neckbeard Configuration](#neckbeard-configuration)
+    * [Advanced Configuration](#advanced-configuration)
     * [Uninstalling Python Versions](#uninstalling-python-versions)
 * **[Command Reference](#command-reference)**
 * **[Development](#development)**
@@ -65,7 +67,6 @@ executables injected into your `PATH`, determines which Python version
 has been specified by your application, and passes your commands along
 to the correct Python installation.
 
-
 ### Understanding PATH
 
 When you run a command like `python` or `pip`, your operating system
@@ -80,7 +81,6 @@ executable in a directory at the beginning of the list takes
 precedence over another one at the end. In this example, the
 `/usr/local/bin` directory will be searched first, then `/usr/bin`,
 then `/bin`.
-
 
 ### Understanding Shims
 
@@ -102,26 +102,25 @@ operating system will do the following:
 * Run the shim named `pip`, which in turn passes the command along to
   pyenv
 
-
 ### Choosing the Python Version
 
 When you execute a shim, pyenv determines which Python version to use by
 reading it from the following sources, in this order:
 
 1. The `PYENV_VERSION` environment variable (if specified). You can use
-   the [`pyenv shell`](#pyenv-shell) command to set this environment
+   the [`pyenv shell`](https://github.com/yyuu/pyenv/blob/master/COMMANDS.md#pyenv-shell) command to set this environment
    variable in your current shell session.
 
 2. The application-specific `.python-version` file in the current
    directory (if present). You can modify the current directory's
-   `.python-version` file with the [`pyenv local`](#pyenv-local)
+   `.python-version` file with the [`pyenv local`](https://github.com/yyuu/pyenv/blob/master/COMMANDS.md#pyenv-local)
    command.
 
 3. The first `.python-version` file found (if any) by searching each parent
    directory, until reaching the root of your filesystem.
 
 4. The global `~/.pyenv/version` file. You can modify this file using
-   the [`pyenv global`](#pyenv-global) command. If the global version
+   the [`pyenv global`](https://github.com/yyuu/pyenv/blob/master/COMMANDS.md#pyenv-global) command. If the global version
    file is not present, pyenv assumes you want to use the "system"
    Python. (In other words, whatever version would run if pyenv weren't in your
    `PATH`.)
@@ -192,7 +191,7 @@ easy to fork and contribute any changes back upstream.
     **Ubuntu note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
 
 3. **Add `pyenv init` to your shell** to enable shims and autocompletion.
-   Please make sure `eval "$(pyenv init -)"` is placed toward the end of shell
+   Please make sure `eval "$(pyenv init -)"` is placed toward the end of the shell
    configuration file since it manipulates `PATH` during the initialization.
 
         $ echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
@@ -200,7 +199,7 @@ easy to fork and contribute any changes back upstream.
     **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.
     **Ubuntu note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
     
-    **General warning**: There are some systems, where the `BASH_ENV` variable is configured
+    **General warning**: There are some systems where the `BASH_ENV` variable is configured
     to point to `.bashrc`. On such systems you should almost certainly put the abovementioned line
     `eval "$(pyenv init -)` into `.bash_profile`, and **not** into `.bashrc`. Otherwise you
     may observe strange behaviour, such as `pyenv` getting into an infinite loop.
@@ -212,12 +211,15 @@ easy to fork and contribute any changes back upstream.
         $ exec $SHELL
 
 5. **Install Python versions into `$PYENV_ROOT/versions`.**
-   For example, to install Python 2.7.8, download and unpack the source, then run:
+   For example, to download and install Python 2.7.8, run:
 
         $ pyenv install 2.7.8
 
    **NOTE:** If you need to pass configure option to build, please use
    ```CONFIGURE_OPTS``` environment variable.
+   
+   **NOTE:** If you want to use proxy to download, please use `http_proxy` and `https_proxy`
+   environment variable.
 
    **NOTE:** If you are having trouble installing a python version,
    please visit the wiki page about
@@ -252,6 +254,31 @@ To upgrade to a specific release of pyenv, check out the corresponding tag:
     v0.1.0
     $ git checkout v0.1.0
 
+### Uninstalling pyenv
+
+The simplicity of pyenv makes it easy to temporarily disable it, or
+uninstall from the system.
+
+1. To **disable** pyenv managing your Python versions, simply remove the
+  `pyenv init` line from your shell startup configuration. This will
+  remove pyenv shims directory from PATH, and future invocations like
+  `python` will execute the system Python version, as before pyenv.
+
+  `pyenv` will still be accessible on the command line, but your Python
+  apps won't be affected by version switching.
+
+2. To completely **uninstall** pyenv, perform step (1) and then remove
+   its root directory. This will **delete all Python versions** that were
+   installed under `` `pyenv root`/versions/ `` directory:
+
+        rm -rf `pyenv root`
+
+   If you've installed pyenv using a package manager, as a final step
+   perform the pyenv package removal. For instance, for Homebrew:
+
+        brew uninstall pyenv
+
+## Command Reference
 
 ### Homebrew on Mac OS X
 
@@ -262,14 +289,13 @@ package manager for Mac OS X.
     $ brew install pyenv
 
 
-To upgrade pyenv in the future, just use `upgrade` instead of `install`.
+To upgrade pyenv in the future, use `upgrade` instead of `install`.
 
-After installation, you'll still need to add `eval "$(pyenv init -)"` to your
-profile (as stated in the caveats). You'll only ever have to do this
-once.
+After installation, you'll need to add `eval "$(pyenv init -)"` to your profile (as stated in the caveats displayed by Homebrew — to display them again, use `brew info pyenv`). You only need to add that to your profile once.
 
+Then follow the rest of the post-installation steps under "Basic GitHub Checkout" above, starting with #4 ("restart your shell so the path changes take effect").
 
-### Neckbeard Configuration
+### Advanced Configuration
 
 Skip this section unless you must know what every line in your shell
 profile is doing.
@@ -324,43 +350,32 @@ See [COMMANDS.md](COMMANDS.md).
 
 ----
 
+## Environment variables
+
+You can affect how pyenv operates with the following settings:
+
+name | default | description
+-----|---------|------------
+`PYENV_VERSION` | | Specifies the Python version to be used.<br>Also see [`pyenv shell`](#pyenv-shell)
+`PYENV_ROOT` | `~/.pyenv` | Defines the directory under which Python versions and shims reside.<br>Also see `pyenv root`
+`PYENV_DEBUG` | | Outputs debug information.<br>Also as: `pyenv --debug <subcommand>`
+`PYENV_HOOK_PATH` | [_see wiki_][hooks] | Colon-separated list of paths searched for pyenv hooks.
+`PYENV_DIR` | `$PWD` | Directory to start searching for `.python-version` files.
 
 ## Development
 
-The pyenv source code is [hosted on GitHub](https://github.com/yyuu/pyenv).
-It's clean, modular, and easy to understand--even if you're not a shell hacker.
+The pyenv source code is [hosted on
+GitHub](https://github.com/yyuu/pyenv).  It's clean, modular,
+and easy to understand, even if you're not a shell hacker.
 
-Please feel free to submit Pull Requests and report bugs on the
-[issue tracker](https://github.com/yyuu/pyenv/issues).
+Tests are executed using [Bats](https://github.com/sstephenson/bats):
+
+    $ bats test
+    $ bats/test/<file>.bats
+
+Please feel free to submit pull requests and file bugs on the [issue
+tracker](https://github.com/yyuu/pyenv/issues).
 
 
-### Version History
-
-See [CHANGELOG.md](CHANGELOG.md).
-
-
-### License
-
-(The MIT license)
-
-* Copyright (c) 2013 Yamashita, Yuu
-* Copyright (c) 2013 Sam Stephenson
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  [pyenv-virtualenv]: https://github.com/yyuu/pyenv-virtualenv#readme
+  [hooks]: https://github.com/yyuu/pyenv/wiki/Authoring-plugins#pyenv-hooks

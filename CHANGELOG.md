@@ -1,5 +1,46 @@
 ## Version History
 
+### 20151222
+
+* pyenv: Merge recent changes from rbenv as of 2015-12-14 (#504)
+* python-build: Add a `OPENSSL_NO_SSL3` patch for CPython 2.6, 2.7, 3.0, 3.1, 3.2 and 3.3 series (#507, #511)
+* python-build: Stopped using mirror at yyuu.github.io for CPython since http://www.python.org is on fast.ly
+
+### 20151210
+
+* pyenv: Add a default hook for Anaconda to look for original `$PATH` (#491)
+* pyenv: Skip virtualenv aliases on `pyenv versions --skip-aliases` (yyuu/pyenv-virtualenv#126)
+* python-build: Add CPython 2.7.11, 3.5.1 (#494, #498)
+* python-build: Update OpenSSL to 1.0.1q (#496)
+* python-build: Adding SSL patch to build 2.7.3 on Debian (#495)
+
+### 20151124
+
+* pyenv: Import recent changes from rbenv 5fb9c84e14c8123b2591d22e248f045c7f8d8a2c
+* pyenv: List anaconda-style virtual environments as a version in pyenv (#471)
+* python-build: Import recent changes from ruby-build v20151028
+* python-build: Add PyPy 4.0.1 (#489)
+* python-build: Add `miniconda*-3.18.3` (#477)
+* python-build: Add CPython 2.7.11 RC1
+
+### 20151105
+
+* python-build: Add anaconda2-2.4.0 and anacondaa3-2.4.0
+* python-biuld: Add Portable PyPy 4.0 (#472)
+
+### 20151103
+
+* python-build: Add PyPy 4.0.0 (#463)
+* python-build: Add Jython 2.7.1b2
+* python-build: Add warning about setuptools issues on CPython 3.0.1 on OS X (#456)
+
+### 20151006
+
+* pyenv: Different behaviour when invoking .py script through symlink (#379, #404)
+* pyenv: Enabled Gitter on the project (#436, #444)
+* python-build: Add Jython 2.7.1b1
+* python-build: Install OpenSSL on OS X if no proper versionn is available (#429)
+
 ### 20150913
 
 * python-build: Add CPython 3.5.0

@@ -12,7 +12,9 @@
 #   -g/--debug       Build a debug version
 #
 
-PYTHON_BUILD_VERSION="20150818"
+PYTHON_BUILD_VERSION="20151028"
+
+OLDIFS="$IFS"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
@@ -103,6 +105,7 @@ os_information() {
 osx_version() {
   local -a ver
   IFS=. ver=( `sw_vers -productVersion` )
+  IFS="$OLDIFS"
   echo $(( ${ver[0]}*100 + ${ver[1]} ))
 }
 
@@ -518,6 +521,8 @@ fetch_svn() {
 
   if type svn &>/dev/null; then
     svn co -r "$svn_rev" "$svn_url" "${package_name}" >&4 2>&1
+  elif type svnlite &>/dev/null; then
+    svnlite co -r "$svn_rev" "$svn_url" "${package_name}" >&4 2>&1
   else
     echo "error: please install Subversion and try again" >&2
     exit 1
@@ -682,8 +687,7 @@ build_package_standard() {
       export CC=clang
     fi
     ${!PACKAGE_CONFIGURE:-./configure} --prefix="${!PACKAGE_PREFIX_PATH:-$PREFIX_PATH}" \
-                                       --libdir="${!PACKAGE_PREFIX_PATH:-$PREFIX_PATH}/lib" \
-                                       $CONFIGURE_OPTS ${!PACKAGE_CONFIGURE_OPTS} "${!PACKAGE_CONFIGURE_OPTS_ARRAY}"
+      $CONFIGURE_OPTS ${!PACKAGE_CONFIGURE_OPTS} "${!PACKAGE_CONFIGURE_OPTS_ARRAY}" || return 1
   ) >&4 2>&1
 
   { "$MAKE" $MAKE_OPTS ${!PACKAGE_MAKE_OPTS} "${!PACKAGE_MAKE_OPTS_ARRAY}"
@@ -845,6 +849,23 @@ build_package_jython() {
       ( cd "${PREFIX_PATH}/bin" && ln -fs jython python )
     fi
   } >&4 2>&1
+  fix_jython_shebangs
+}
+
+fix_jython_shebangs() {
+  # Workaround for Jython 2.7+ (#458)
+  for file in "${PREFIX_PATH}/bin"/*; do
+    case "$(head -1 "${file}")" in
+    "#!"*"/bin/jython" )
+      sed -i.bak "1 s:.*:#\!\/usr\/bin\/env ${PREFIX_PATH}\/bin\/jython:" "${file}"
+      ;;
+    "#!"*"/bin/python2.7"* )
+      # Jython 2.7+ requires CPython 2.7 to run
+      sed -i.bak "1 s:.*:#\!\/usr\/bin\/env python2.7:" "${file}"
+      ;;
+    esac
+    rm -f "${file}.bak"
+  done
 }
 
 build_package_jython_builder() {
@@ -872,6 +893,8 @@ pypy_architecture() {
     "armel" ) echo "linux-armel" ;;
     "armhf" | "armv6l" | "armv7l" ) echo "linux-armhf" ;;
     "i386" | "i486" | "i586" | "i686" | "i786" ) echo "linux" ;;
+    "ppc64" ) echo "linux-ppc64" ;;
+    "ppc64le" ) echo "linux-ppc64le" ;;
     "x86_64" ) echo "linux64" ;;
     * ) return 1 ;;
     esac
@@ -934,7 +957,9 @@ anaconda_architecture() {
   "Darwin" ) echo "MacOSX-x86_64" ;;
   "Linux" )
     case "$(uname -m)" in
+    "armv7l" ) echo "Linux-armv7l" ;;
     "i386" | "i486" | "i586" | "i686" | "i786" ) echo "Linux-x86" ;;
+    "ppc64le" ) echo "Linux-ppc64le" ;;
     "x86_64" ) echo "Linux-x86_64" ;;
     * ) return 1 ;;
     esac
@@ -1083,6 +1108,7 @@ require_gcc() {
 locate_gcc() {
   local gcc gccs
   IFS=: gccs=($(gccs_in_path))
+  IFS="$OLDIFS"
 
   verify_gcc "$CC" ||
   verify_gcc "$(command -v gcc || true)" || {
@@ -1098,6 +1124,7 @@ gccs_in_path() {
   local gcc path paths
   local gccs=()
   IFS=: paths=($PATH)
+  IFS="$OLDIFS"
 
   shopt -s nullglob
   for path in "${paths[@]}"; do
@@ -1206,8 +1233,31 @@ require_distro() {
   return 1
 }
 
+configured_with_package_dir() {
+  local package_var_name="$(capitalize "$1")"
+  shift 1
+  local PACKAGE_CONFIGURE_OPTS="${package_var_name}_CONFIGURE_OPTS"
+  local PACKAGE_CONFIGURE_OPTS_ARRAY="${package_var_name}_MAKE_OPTS_ARRAY[@]"
+  local arg flag
+  for arg in ${CONFIGURE_OPTS} ${!PACKAGE_CONFIGURE_OPTS} "${!PACKAGE_CONFIGURE_OPTS_ARRAY}"; do
+    if [[ "$arg" == "CPPFLAGS="* ]]; then
+      for flag in ${CPPFLAGS} ${arg##CPPFLAGS=}; do
+        if [[ "$flag" == "-I"* ]]; then
+          local header
+          for header in "$@"; do
+            if [ -e "${flag##-I}/${header#/}" ]; then
+              return 0
+            fi
+          done
+        fi
+      done
+    fi
+  done
+  return 1
+}
+
 needs_yaml() {
-  [[ "$RUBY_CONFIGURE_OPTS" != *--with-libyaml-dir=* ]] &&
+  ! configured_with_package_dir "python" "yaml.h" &&
   ! use_homebrew_yaml
 }
 
@@ -1221,30 +1271,16 @@ use_homebrew_yaml() {
   fi
 }
 
-configured_with_readline_dir() {
+has_broken_mac_readline() {
   # Mac OS X 10.4 has broken readline.
   # https://github.com/yyuu/pyenv/issues/23
-  local arg flag
-  for arg in ${CONFIGURE_OPTS} ${PYTHON_CONFIGURE_OPTS} "${PYTHON_CONFIGURE_OPTS_ARRAY[@]}"; do
-    if [[ "$arg" == "CPPFLAGS="* ]]; then
-      for flag in ${CPPFLAGS} ${arg##CPPFLAGS=}; do
-        if [[ "$flag" == "-I"* ]] && [ -e "${flag##-I}/readline/rlconf.h" ]; then
-          return 0
-        fi
-      done
-    fi
-  done
-  return 1
-}
-
-has_broken_mac_readline() {
   [ "$(uname -s)" = "Darwin" ] &&
-  ! configured_with_readline_dir &&
+  ! configured_with_package_dir "python" "readline/rlconf.h" &&
   ! use_homebrew_readline
 }
 
 use_homebrew_readline() {
-  if ! configured_with_readline_dir; then
+  if ! configured_with_package_dir "python" "readline/rlconf.h"; then
     local libdir="$(brew --prefix readline 2>/dev/null || true)"
     if [ -d "$libdir" ]; then
       export CPPFLAGS="-I$libdir/include ${CPPFLAGS}"
@@ -1258,7 +1294,6 @@ use_homebrew_readline() {
 has_broken_mac_openssl() {
   [ "$(uname -s)" = "Darwin" ] &&
   [[ "$(/usr/bin/openssl version 2>/dev/null || true)" = "OpenSSL 0.9.8"?* ]] &&
-  [[ "$RUBY_CONFIGURE_OPTS" != *--with-openssl-dir=* ]] &&
   ! use_homebrew_openssl
 }
 
@@ -1317,11 +1352,16 @@ build_package_verify_openssl() {
 
 # Ensure that directories listed in LDFLAGS exist
 build_package_ldflags_dirs() {
-  local arg
-  for arg in $LDFLAGS; do
-    case "$arg" in
-    -L* ) mkdir -p "${arg#-L}" ;;
+  local arg dir
+  set - $LDFLAGS
+  while [ $# -gt 0 ]; do
+    dir=""
+    case "$1" in
+    -L  ) dir="$2" ;;
+    -L* ) dir="${1#-L}" ;;
     esac
+    [ -z "$dir" ] || mkdir -p "$dir"
+    shift 1
   done
 }
 
@@ -1629,7 +1669,6 @@ unset IPV6
 
 PYTHON_BUILD_INSTALL_PREFIX="$(abs_dirname "$0")/.."
 
-OLDIFS="$IFS"
 IFS=: PYTHON_BUILD_DEFINITIONS=($PYTHON_BUILD_DEFINITIONS ${PYTHON_BUILD_ROOT:-$PYTHON_BUILD_INSTALL_PREFIX}/share/python-build)
 IFS="$OLDIFS"
 
@@ -1774,6 +1813,9 @@ fi
 if [ -n "$DEBUG" ]; then
   package_option python configure --with-pydebug
 fi
+
+# python-build: Specify `--libdir` on configure to fix build on openSUSE (#36)
+package_option python configure --libdir="${PREFIX_PATH}/lib"
 
 # python-build: Set `RPATH` if `--enable-shared` was given (#65, #66, #82)
 if [[ "$CONFIGURE_OPTS" == *"--enable-shared"* ]] || [[ "$PYTHON_CONFIGURE_OPTS" == *"--enable-shared"* ]]; then

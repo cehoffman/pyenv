@@ -59,18 +59,28 @@ create_executable() {
   assert_success "${PYENV_TEST_DIR}/bin/kill-all-humans"
 }
 
+@test "doesn't include current directory in PATH search" {
+  export PATH="$(path_without "kill-all-humans")"
+  mkdir -p "$PYENV_TEST_DIR"
+  cd "$PYENV_TEST_DIR"
+  touch kill-all-humans
+  chmod +x kill-all-humans
+  PYENV_VERSION=system run pyenv-which kill-all-humans
+  assert_failure "pyenv: kill-all-humans: command not found"
+}
+
 @test "version not installed" {
   create_executable "3.4" "py.test"
   PYENV_VERSION=3.3 run pyenv-which py.test
-  assert_failure "pyenv: version \`3.3' is not installed"
+  assert_failure "pyenv: version \`3.3' is not installed (set by PYENV_VERSION environment variable)"
 }
 
 @test "versions not installed" {
   create_executable "3.4" "py.test"
   PYENV_VERSION=2.7:3.3 run pyenv-which py.test
   assert_failure <<OUT
-pyenv: version \`2.7' is not installed
-pyenv: version \`3.3' is not installed
+pyenv: version \`2.7' is not installed (set by PYENV_VERSION environment variable)
+pyenv: version \`3.3' is not installed (set by PYENV_VERSION environment variable)
 OUT
 }
 
@@ -78,6 +88,12 @@ OUT
   create_executable "2.7" "py.test"
   PYENV_VERSION=2.7 run pyenv-which fab
   assert_failure "pyenv: fab: command not found"
+}
+
+@test "no executable found for system version" {
+  export PATH="$(path_without "py.test")"
+  PYENV_VERSION=system run pyenv-which py.test
+  assert_failure "pyenv: py.test: command not found"
 }
 
 @test "executable found in other versions" {
