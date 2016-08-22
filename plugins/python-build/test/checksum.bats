@@ -3,18 +3,22 @@
 load test_helper
 export PYTHON_BUILD_SKIP_MIRROR=1
 export PYTHON_BUILD_CACHE_PATH=
+export PYTHON_BUILD_CURL_OPTS=
+
+setup() {
+  ensure_not_found_in_path aria2c
+}
 
 
 @test "package URL without checksum" {
-  stub shasum true
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/without-checksum
-  [ "$status" -eq 0 ]
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+
+  assert_success
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
-  unstub shasum
 }
 
 
@@ -23,8 +27,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-checksum
-  [ "$status" -eq 0 ]
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+
+  assert_success
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub shasum
@@ -36,8 +41,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-invalid-checksum
-  [ "$status" -eq 1 ]
-  [ ! -f "${INSTALL_ROOT}/bin/package" ]
+
+  assert_failure
+  refute [ -f "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub shasum
@@ -49,8 +55,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-checksum
-  [ "$status" -eq 0 ]
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+
+  assert_success
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub shasum
@@ -62,8 +69,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-md5-checksum
-  [ "$status" -eq 0 ]
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+
+  assert_success
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub md5
@@ -75,8 +83,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-md5-checksum
-  [ "$status" -eq 0 ]
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+
+  assert_success
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub md5
@@ -88,8 +97,9 @@ export PYTHON_BUILD_CACHE_PATH=
   stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
 
   install_fixture definitions/with-checksum
-  [ "$status" -eq 1 ]
-  [ ! -f "${INSTALL_ROOT}/bin/package" ]
+
+  assert_failure
+  refute [ -f "${INSTALL_ROOT}/bin/package" ]
 
   unstub curl
   unstub shasum
@@ -97,6 +107,7 @@ export PYTHON_BUILD_CACHE_PATH=
 
 @test "existing tarball in build location is reused" {
   stub shasum true "echo ba988b1bb4250dee0b9dd3d4d722f9c64b2bacfc805d1b6eba7426bda72dd3c5"
+  stub curl false
   stub curl false
   stub wget false
 
@@ -111,7 +122,7 @@ install_package "package-1.0.0" "http://example.com/packages/package-1.0.0.tar.g
 DEF
 
   assert_success
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub shasum
 }
@@ -133,7 +144,20 @@ install_package "package-1.0.0" "http://example.com/packages/package-1.0.0.tar.g
 DEF
 
   assert_success
-  [ -x "${INSTALL_ROOT}/bin/package" ]
+  assert [ -x "${INSTALL_ROOT}/bin/package" ]
 
   unstub shasum
+}
+
+@test "package URL with checksum of unexpected length" {
+  stub curl "-q -o * -*S* http://example.com/* : cp $FIXTURE_ROOT/\${5##*/} \$3"
+
+  run_inline_definition <<DEF
+install_package "package-1.0.0" "http://example.com/packages/package-1.0.0.tar.gz#checksum_of_unexpected_length" copy
+DEF
+
+  assert_failure
+  refute [ -f "${INSTALL_ROOT}/bin/package" ]
+  assert_output_contains "unexpected checksum length: 29 (checksum_of_unexpected_length)"
+  assert_output_contains "expected 0 (no checksum), 32 (MD5), or 64 (SHA2-256)"
 }

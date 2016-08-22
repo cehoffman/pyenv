@@ -1,5 +1,75 @@
 ## Version History
 
+## 1.0.0
+
+* pyenv: Import latest changes from rbenv as of Aug 15, 2016 (#669)
+* pyenv: Add workaround for system python at `/bin/python` (#628)
+* python-build: Import changes from ruby-build v20160602 (#668)
+
+## 20160726
+
+* python-build: pypy-5.3.1: Remove stray text (#648)
+* python-build: Add CPython 3.6.0a3 (#657)
+* python-build: Add anaconda[23]-4.1.0
+* pyenv: Keep using `.tar.gz` archives if tar doesn't support `-J` (especially on BSD) (#654, #663)
+* pyenv: Fixed conflict between pyenv-virtualenv's `rehash` hooks of `envs.bash`
+* pyenv: Write help message of `sh-*` commands to stdout properly (#650, #651)
+
+## 20160629
+
+* python-build: Added CPython 2.7.12 (#645)
+* python-build: Added PyPy 3.5.1 (#646)
+* python-build: Added PyPy Portable 5.3.1
+
+## 20160628
+
+* python-build: Added PyPy3.3 5.2-alpha1 (#631)
+* python-build: Added CPython 2.7.12rc1
+* python-build: Added CPython 3.6.0a2 (#630)
+* python-build: Added CPython 3.5.2 (#643)
+* python-build: Added CPython 3.4.5 (#643)
+* python-build: Added PyPy2 5.3 (#626)
+* pyenv: Skip creating shims for system executables bundled with Anaconda rather than ignoring them in `pyenv-which` (#594, #595, #599)
+* python-build: Configured GCC as a requirement to build CPython prior to 2.4.4 (#613)
+* python-build: Use `aria2c` - ultra fast download utility if available (#534)
+
+## 20160509
+
+* python-build: Fixed wrong SHA256 of `pypy-5.1-linux_x86_64-portable.tar.bz2` (#586, #587)
+* python-build: Added miniconda[23]-4.0.5
+* python-build: Added PyPy (Portable) 5.1.1 (#591, #592, #593)
+
+## 20160422
+
+* python-build: Added PyPy 5.1 (#579)
+* python-build: Added PyPy 5.1 Portable
+* python-build: Added PyPy 5.0.1 (#558)
+* python-build: Added PyPy 5.0.1 Portable
+* python-build: Added PyPy 5.0 Portable
+* python-build: Added anaconda[23]-4.0.0 (#572)
+* python-build: Added Jython 2.7.1b3 (#557)
+
+## 20160310
+
+* python-build: Add PyPy-5.0.0 (#555)
+* pyenv: Import recent changes from rbenv 1.0 (#549)
+
+## 20160303
+
+* python-build: Add anaconda[23]-2.5.0 (#543)
+* python-build: Import recent changes from ruby-build 20160130
+* python-build: Compile with `--enable-unicode=ucs4` by default for CPython (#257, #542)
+* python-build: Switch download URL of Continuum products from HTTP to HTTPS (#543)
+* python-build: Added pypy-dev special case in pyenv-install to use py27 (#547)
+* python-build: Upgrade OpenSSL to 1.0.2g (#550)
+
+## 20160202
+
+* pyenv: Run rehash automatically after `conda install`
+* python-build: Add CPython 3.4.4 (#511)
+* python-build: Add anaconda[23]-2.4.1, miniconda[23]-3.19.0
+* python-build: Fix broken build definitions of CPython/Stackless 3.2.x (#531)
+
 ### 20151222
 
 * pyenv: Merge recent changes from rbenv as of 2015-12-14 (#504)

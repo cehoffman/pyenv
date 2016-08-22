@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-export -n CDPATH
+unset CDPATH
 
 if [ "$1" = "--debug" ]; then
   export PYENV_DEBUG=1
@@ -97,6 +97,7 @@ PYENV_HOOK_PATH="${PYENV_HOOK_PATH}:/usr/local/etc/pyenv.d:/etc/pyenv.d:/usr/lib
 for plugin_hook in "${PYENV_ROOT}/plugins/"*/etc/pyenv.d; do
   PYENV_HOOK_PATH="${PYENV_HOOK_PATH}:${plugin_hook}"
 done
+PYENV_HOOK_PATH="${PYENV_HOOK_PATH#:}"
 export PYENV_HOOK_PATH
 
 shopt -u nullglob
@@ -121,7 +122,11 @@ case "$command" in
 
   shift 1
   if [ "$1" = --help ]; then
-    exec pyenv-help "$command"
+    if [[ "$command" == "sh-"* ]]; then
+      echo "pyenv help \"$command\""
+    else
+      exec pyenv-help "$command"
+    fi
   else
     exec "$command_path" "$@"
   fi
