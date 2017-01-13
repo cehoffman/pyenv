@@ -1,5 +1,58 @@
 ## Version History
 
+## Unreleased
+
+* Add CPython 3.5.3rc1
+* Add CPython 3.4.6rc1
+
+## 1.0.6
+
+* python-build: Add CPython 3.6.0 (#787)
+
+## 1.0.5
+
+* python-build: Add CPython 2.7.13 (#782)
+* python-build: Add CPython 3.6.0rc2 (#781)
+* python-build: Add Anaconda 4.2.0 (#774)
+* python-build: Add Anaconda3 4.2.0 (#765)
+* python-build: Add IronPython 2.7.7 (#755)
+
+## 1.0.4
+
+* python-build: Add PyPy 5.6.0 (#751)
+* python-build: Add PyPy3 3.5 nightlies (`pypy3.5-c-jit-latest` #737)
+* python-build: Add Stackless 2.7.12 (#753)
+* python-build: Add Stackless 2.7.11
+* python-build: Add Stackless 2.7.10
+* python-build: Add Pyston 0.6.0
+* python-build: Add CPython 3.6.0b4 (#762)
+
+## 1.0.3
+
+* python-build: Add CPython 3.6.0b3 (#731, #744)
+* python-build: Add PyPy3.3 5.5-alpha (#734, #736)
+* python-build: Stop specifying `--enable-unicode=ucs4` on OS X (#257, #726)
+* python-build: Fix 3.6-dev and add 3.7-dev (#729, #730)
+* python-build: Add a patch for https://bugs.python.org/issue26664 (#725)
+* python-build: Add Pyston 0.5.1 (#718)
+* python-build: Add Stackless 3.4.2 (#720)
+* python-build: Add IronPython 2.7.6.3 (#716)
+* python-build: Add Stackless 2.7.9 (#714)
+
+## 1.0.2
+
+* python-build: Add CPython 3.6.0b1 (#699)
+* python-build: Add anaconda[23] 4.1.1 (#701, #702)
+* python-build: Add miniconda[23] 4.1.11 (#703, #704, #706)
+* python-build: Remove `bin.orig` if exists to fix an issue with `--enable-framework` (#687, #700)
+
+## 1.0.1
+
+* python-build: Add CPython 3.6.0a4 (#673)
+* python-build: Add PyPy2 5.4, 5.4.1 (#683, #684, #695, #697)
+* python-build: Add PyPy Portable 5.4, 5.4.1 (#685, #686, #696)
+* python-build: Make all HTTP source URLs to HTTPS (#680)
+
 ## 1.0.0
 
 * pyenv: Import latest changes from rbenv as of Aug 15, 2016 (#669)
@@ -301,7 +354,7 @@
 * python-build: Fix build of Tkinter with Tcl/Tk 8.6 (#131)
 * python-build: Fix build problem with Readline 6.3 (#126, #131, #149, #152)
 * python-build: Do not exit with errors even if some of modules are absent (#131)
-* python-build: MacOSX was mispelled as MaxOSX in `anaconda_architecture` (#136)
+* python-build: MacOSX was misspelled as MaxOSX in `anaconda_architecture` (#136)
 * python-build: Use default `cc` as the C Compiler to build CPython (#148, #150)
 * python-build: Display value from `pypy_architecture` and `anaconda_architecture` on errors (yyuu/pyenv-virtualenv#18)
 * python-build: Remove old development version; 2.6-dev

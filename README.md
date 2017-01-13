@@ -134,7 +134,8 @@ in this example), but also have Python 3.3.6, 3.2, and 2.5 available on your
 global system 3.3.6 3.2 2.5`. At this point, one should be able to find the full
 executable path to each of these using `pyenv which`, e.g. `pyenv which python2.5`
 (should display `$PYENV_ROOT/versions/2.5/bin/python2.5`), or `pyenv which
-python3.4` (should display path to system Python3).
+python3.4` (should display path to system Python3). You can also specify multiple
+versions in a `.python-version` file, separated by newlines or any whitespace.
 
 ### Locating the Python Installation
 
@@ -153,6 +154,12 @@ For example, you might have these versions installed:
 
 As far as pyenv is concerned, version names are simply the directories in
 `~/.pyenv/versions`.
+
+### Managing Virtual Environments
+
+There is a pyenv plugin named [pyenv-virtualenv](https://github.com/yyuu/pyenv-virtualenv) which comes with various features to help pyenv users to manage virtual environments created by virtualenv or Anaconda.
+Because the `activate` script of those virtual environments are relying on mutating `$PATH` variable of user's interactive shell, it will intercept pyenv's shim style command execution hooks.
+We'd recommend to install pyenv-virtualenv as well if you have some plan to play with those virtual environments.
 
 
 ----
@@ -184,20 +191,21 @@ easy to fork and contribute any changes back upstream.
    pyenv repo is cloned and add `$PYENV_ROOT/bin` to your `$PATH` for access
    to the `pyenv` command-line utility.
 
-        $ echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bash_profile
-        $ echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bash_profile
-
-    **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.
-    **Ubuntu note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
+    ```sh
+    $ echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bash_profile
+    $ echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bash_profile
+    ```
+    **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.  
+    **Ubuntu and Fedora note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
 
 3. **Add `pyenv init` to your shell** to enable shims and autocompletion.
    Please make sure `eval "$(pyenv init -)"` is placed toward the end of the shell
    configuration file since it manipulates `PATH` during the initialization.
-
-        $ echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
-
-    **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.
-    **Ubuntu note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
+    ```sh
+    $ echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
+    ```
+    **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.  
+    **Ubuntu and Fedora note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
     
     **General warning**: There are some systems where the `BASH_ENV` variable is configured
     to point to `.bashrc`. On such systems you should almost certainly put the abovementioned line
@@ -207,14 +215,14 @@ easy to fork and contribute any changes back upstream.
 
 4. **Restart your shell so the path changes take effect.**
    You can now begin using pyenv.
-
-        $ exec $SHELL
-
+    ```sh
+    $ exec $SHELL
+    ```
 5. **Install Python versions into `$PYENV_ROOT/versions`.**
    For example, to download and install Python 2.7.8, run:
-
-        $ pyenv install 2.7.8
-
+    ```sh
+    $ pyenv install 2.7.8
+    ```
    **NOTE:** If you need to pass configure option to build, please use
    ```CONFIGURE_OPTS``` environment variable.
    
@@ -233,16 +241,20 @@ upgrade your installation at any time using git.
 
 To upgrade to the latest development version of pyenv, use `git pull`:
 
-    $ cd ~/.pyenv
-    $ git pull
+```sh
+$ cd ~/.pyenv
+$ git pull
+```
 
 To upgrade to a specific release of pyenv, check out the corresponding tag:
 
-    $ cd ~/.pyenv
-    $ git fetch
-    $ git tag
-    v0.1.0
-    $ git checkout v0.1.0
+```sh
+$ cd ~/.pyenv
+$ git fetch
+$ git tag
+v0.1.0
+$ git checkout v0.1.0
+```
 
 ### Uninstalling pyenv
 
@@ -260,9 +272,9 @@ uninstall from the system.
 2. To completely **uninstall** pyenv, perform step (1) and then remove
    its root directory. This will **delete all Python versions** that were
    installed under `` `pyenv root`/versions/ `` directory:
-
-        rm -rf `pyenv root`
-
+    ```sh
+    rm -rf `pyenv root`
+    ```
    If you've installed pyenv using a package manager, as a final step
    perform the pyenv package removal. For instance, for Homebrew:
 
@@ -351,6 +363,9 @@ name | default | description
 `PYENV_DEBUG` | | Outputs debug information.<br>Also as: `pyenv --debug <subcommand>`
 `PYENV_HOOK_PATH` | [_see wiki_][hooks] | Colon-separated list of paths searched for pyenv hooks.
 `PYENV_DIR` | `$PWD` | Directory to start searching for `.python-version` files.
+`PYTHON_BUILD_ARIA2_OPTS` | | Used to pass aditional parameters to [`aria2`](https://aria2.github.io/).<br>if `aria2c` binary is available on PATH, pyenv use `aria2c` instead of `curl` or `wget` to download the Python Source code. If you have an unstable internet connection, you can use this variable to instruct `aria2` to accelerate the download.<br>In most cases, you will only need to use `-x 10 -k 1M` as value to `PYTHON_BUILD_ARIA2_OPTS` environment variable
+
+
 
 ## Development
 
