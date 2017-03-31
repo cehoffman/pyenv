@@ -1,9 +1,35 @@
 ## Version History
 
-## Unreleased
+## 1.0.10
 
-* Add CPython 3.5.3rc1
-* Add CPython 3.4.6rc1
+* python-build: Add Anaconda2/Anaconda3 4.3.1 (#876)
+* python-build: Make miniconda-latest point to miniconda2-latest (#881)
+* python-build: Fix typo in MacOS packages for anaconda2-4.3.0/4.2.0 (#880)
+
+## 1.0.9
+
+* pyenv: Migrate project site from https://github.com/yyuu/pyenv to https://github.com/pyenv/pyenv
+* python-build: Add PyPy2 5.7.0 (#872, #868)
+* python-build: Add PyPy3 5.7.0-beta (#871, #869)
+* python-build: Add CPython 3.6.1 (#873)
+* python-build: Add Pyston 0.6.1 (#859)
+* python-build: Change default mirror site URL from https://yyuu.github.io/pythons to https://pyenv.github.io/pythons
+* python-build: Upgrade OpenSSL from 1.0.2g to 1.0.2k (#850)
+
+## 1.0.8
+
+* pyenv: Fix fish subcommand completion (#831)
+* python-build: Add Anaconda2/Anaconda3 4.3.0  (#824)
+* python-build: Use CPython on GitHub as the source repository of CPython development versions (#836, #837)
+* python-build: Fix checksum verification issue on the platform where OpenSSL isn't available (#840)
+
+## 1.0.7
+
+* python-build: Add CPython 3.5.3 (#811)
+* python-build: Add CPython 3.4.6 (#812)
+* python-build: Fix tar.gz checksum of CPython 3.6.0 (#793)
+* python-build: Jython installer workaround (#800)
+* python-build: Disable optimization (`-O0`) when `--debug` was specified (#808)
 
 ## 1.0.6
 
@@ -149,7 +175,7 @@
 ### 20151105
 
 * python-build: Add anaconda2-2.4.0 and anacondaa3-2.4.0
-* python-biuld: Add Portable PyPy 4.0 (#472)
+* python-build: Add Portable PyPy 4.0 (#472)
 
 ### 20151103
 
@@ -162,7 +188,7 @@
 * pyenv: Different behaviour when invoking .py script through symlink (#379, #404)
 * pyenv: Enabled Gitter on the project (#436, #444)
 * python-build: Add Jython 2.7.1b1
-* python-build: Install OpenSSL on OS X if no proper versionn is available (#429)
+* python-build: Install OpenSSL on OS X if no proper version is available (#429)
 
 ### 20150913
 
@@ -239,12 +265,12 @@
 #### 20150124
 
 * python-build: Import recent changes from ruby-build v20150112
-* python-build: Prevent adding `/Library/Python/X.X/site-packages` to `sys.path` whtn `--enable-framework` is enabled on OS X. Thanks @s1341 (#292)
+* python-build: Prevent adding `/Library/Python/X.X/site-packages` to `sys.path` when `--enable-framework` is enabled on OS X. Thanks @s1341 (#292)
 * python-build: Add new IronPython release; 2.7.5
 
 #### 20141211
 
-* pyenv: Add bulit-in `pip-rehash` feature. You don't need to install [pyenv-pip-rehash](https://github.com/yyuu/pyenv-pip-rehash) anymore.
+* pyenv: Add built-in `pip-rehash` feature. You don't need to install [pyenv-pip-rehash](https://github.com/yyuu/pyenv-pip-rehash) anymore.
 * python-build: Add new CPython release; 2.7.9 (#284)
 * python-build: Add new PyPy releases; pypy3-2.4.0, pypy3-2.4.0-src (#277)
 * python-build: Add build definitions of PyPy nightly build
