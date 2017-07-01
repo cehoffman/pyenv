@@ -938,6 +938,20 @@ build_package_ironpython_builder() {
   ( cd "Stage/Release/IronPython-"* && build_package_ironpython )
 }
 
+build_package_micropython() {
+  if [ "${MAKEOPTS+defined}" ]; then
+    MAKE_OPTS="$MAKEOPTS"
+  elif [ -z "${MAKE_OPTS+defined}" ]; then
+    MAKE_OPTS="-j $(num_cpu_cores)"
+  fi
+  { cd unix
+    "$MAKE" $MAKE_OPTS axtls
+    "$MAKE" $MAKE_OPTS
+    "$MAKE" install $MAKE_INSTALL_OPTS PREFIX="${PREFIX_PATH}"
+    ( cd "${PREFIX_PATH}/bin" && ln -fs micropython python )
+  }>&4 2>&1
+}
+
 pypy_architecture() {
   case "$(uname -s)" in
   "Darwin" ) echo "osx64" ;;
@@ -1027,7 +1041,7 @@ anaconda_architecture() {
 
 build_package_anaconda() {
   local package_name="$1"
-  { bash "${package_name}.sh" -b -p "${PREFIX_PATH}"
+  { bash "${package_name}.sh" -f -b -p "${PREFIX_PATH}"
   } >&4 2>&1
 }
 

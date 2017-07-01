@@ -207,10 +207,10 @@ easy to fork and contribute any changes back upstream.
     ```
     **Zsh note**: Modify your `~/.zshenv` file instead of `~/.bash_profile`.  
     **Ubuntu and Fedora note**: Modify your `~/.bashrc` file instead of `~/.bash_profile`.
-    
+
     **General warning**: There are some systems where the `BASH_ENV` variable is configured
     to point to `.bashrc`. On such systems you should almost certainly put the abovementioned line
-    `eval "$(pyenv init -)` into `.bash_profile`, and **not** into `.bashrc`. Otherwise you
+    `eval "$(pyenv init -)"` into `.bash_profile`, and **not** into `.bashrc`. Otherwise you
     may observe strange behaviour, such as `pyenv` getting into an infinite loop.
     See [#264](https://github.com/pyenv/pyenv/issues/264) for details.
 
@@ -226,7 +226,7 @@ easy to fork and contribute any changes back upstream.
     ```
    **NOTE:** If you need to pass configure option to build, please use
    ```CONFIGURE_OPTS``` environment variable.
-   
+
    **NOTE:** If you want to use proxy to download, please use `http_proxy` and `https_proxy`
    environment variable.
 
@@ -280,8 +280,6 @@ uninstall from the system.
    perform the pyenv package removal. For instance, for Homebrew:
 
         brew uninstall pyenv
-
-## Command Reference
 
 ### Homebrew on Mac OS X
 
@@ -357,7 +355,7 @@ You can affect how pyenv operates with the following settings:
 
 name | default | description
 -----|---------|------------
-`PYENV_VERSION` | | Specifies the Python version to be used.<br>Also see [`pyenv shell`](#pyenv-shell)
+`PYENV_VERSION` | | Specifies the Python version to be used.<br>Also see [`pyenv shell`](https://github.com/pyenv/pyenv/blob/master/COMMANDS.md#pyenv-shell)
 `PYENV_ROOT` | `~/.pyenv` | Defines the directory under which Python versions and shims reside.<br>Also see `pyenv root`
 `PYENV_DEBUG` | | Outputs debug information.<br>Also as: `pyenv --debug <subcommand>`
 `PYENV_HOOK_PATH` | [_see wiki_][hooks] | Colon-separated list of paths searched for pyenv hooks.
