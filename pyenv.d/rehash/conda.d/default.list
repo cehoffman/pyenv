@@ -1,3 +1,5 @@
+bunzip2
+clear
 # curl
 curl
 curl-config
@@ -27,6 +29,8 @@ xml2-config
 # libxml2-utils
 xmlcatalog
 xmllint
+# ncurses
+tput
 # openssl
 openssl
 # qtchooser
